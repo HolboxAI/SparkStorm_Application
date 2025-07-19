@@ -31,13 +31,6 @@ Backend (FastAPI): http://localhost:8000
 
 Frontend (Expo): http://localhost:8081
 
-mediwallet/
-├── Backend/              # FastAPI backend source code
-├── Frontend/             # Expo React Native source code
-├── docker-compose.yml    # Docker Compose configuration
-├── README.md             # Project documentation
-└── .gitignore            # Git ignore file
-
 5. Features
 Login: Secure user authentication.
 
