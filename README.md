@@ -12,6 +12,7 @@ MediWallet is an AI-powered chat application that allows users to log in, upload
 
 1. **Clone the repository**:
    git clone https://github.com/HolboxAI/SparkStorm_Application
+   
    cd SparkStorm_Application
 
 2. Install Docker:
