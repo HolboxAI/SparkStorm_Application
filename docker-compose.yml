@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  # FastAPI Backend Service
+  backend:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+    container_name: mediwallet-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount source code for development (hot reload)
+      - ./Backend:/app
+      # Persistent volumes for data
+      - chroma_data:/app/chroma_db
+      - uploads_data:/app/uploads
+      - temp_data:/app/temp
+      - static_data:/app/static
+    env_file:
+      - ./Backend/.env
+    environment:
+      - PYTHONPATH=/app
+      - CHROMA_PERSIST_DIRECTORY=/app/chroma_db
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # Expo React Native Frontend Service
+  frontend:
+    build:
+      context: ./Frontend
+      dockerfile: Dockerfile
+    container_name: mediwallet-frontend
+    ports:
+      - "8081:8081"   # Metro bundler
+      - "19000:19000" # Expo dev tools
+      - "19001:19001" # Expo dev server
+      - "19002:19002" # Expo tunnel
+    volumes:
+      # Mount source code for development
+      - ./Frontend:/app
+      # Anonymous volume for node_modules (better performance)
+      - /app/node_modules
+    env_file:
+      - ./Frontend/.env
+    environment:
+      - EXPO_DEVTOOLS_LISTEN_ADDRESS=0.0.0.0
+      - REACT_NATIVE_PACKAGER_HOSTNAME=localhost
+      # Backend URL for container-to-container communication
+      - EXPO_PUBLIC_BACKEND_URL=http://localhost:8000
+    networks:
+      - app-network
+    restart: unless-stopped
+
+# Named volumes for persistent data
+volumes:
+  chroma_data:
+    driver: local
+  uploads_data:
+    driver: local
+  temp_data:
+    driver: local
+  static_data:
+    driver: local
+
+# Custom network
+networks:
+  app-network:
+    driver: bridge
+    name: mediwallet-network

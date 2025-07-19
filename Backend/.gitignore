@@ -1,0 +1,21 @@
+# Python cache and bytecode files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+
+# Environment variables file
+.env
+
+# Application specific folders
+chroma_db/
+temp/
+uploads/
+
+# VSCode settings (optional)
+.vscode/
+
+static/uploads/*
