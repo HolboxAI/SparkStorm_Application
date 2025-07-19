@@ -1,6 +1,6 @@
 import * as React from "react";
-import { View, Image, SafeAreaView } from "react-native";
-
+import { View, SafeAreaView } from "react-native";
+import { Image } from "expo-image";
 import * as WebBrowser from "expo-web-browser";
 import * as AuthSession from "expo-auth-session";
 import {
@@ -31,6 +31,10 @@ export default function Index() {
           // Defaults to current path
           redirectUrl: AuthSession.makeRedirectUri(),
         });
+
+        console.log("createdSessionId:", createdSessionId);
+      // If the user is already signed in, `createdSessionId` will be undefined
+        
 
       // If sign in was successful, set the active session
       if (createdSessionId) {
@@ -88,13 +92,12 @@ export default function Index() {
       >
         <View style={{ gap: 20, alignItems: "center" }}>
           <Image
-            source={require("@/assets/images/logo.png")}
-            style={{ width: 100, height: 100 }}
+            source={require("@/assets/images/MediWallet.svg")}
+            style={{ width: 200, height: 200, resizeMode: "contain", marginBottom: -20 }}
+            contentFit="contain"
+            alt="MediWallet Logo"
           />
-          <Text style={{ fontSize: 32, fontWeight: "bold" }}>
-            Modern Chat App
-          </Text>
-          <Text>Sign in to continue</Text>
+          <Text style={{ fontSize:15, fontFamily: 'Roboto'}}>Your AI-Powered Health Assistant.</Text>
           {errors.map((error) => (
             <Text key={error.code}>{error.code}</Text>
           ))}
@@ -102,23 +105,7 @@ export default function Index() {
 
         {/* spacer */}
         <View style={{ flex: 1 }} />
-        <Button
-          onPress={signInWithPasskey}
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 10,
-            marginBottom: 20,
-            backgroundColor: "black",
-            borderColor: "white",
-            borderWidth: 1,
-          }}
-        >
-          <Text style={{ color: "white", fontWeight: "500" }}>
-            Sign in with Passkey
-          </Text>
-        </Button>
+        
         <Button
           onPress={handleSignInWithGoogle}
           style={{

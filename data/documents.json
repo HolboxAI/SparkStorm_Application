@@ -1,0 +1,73 @@
+{
+    "totalDocuments": 12,
+    "uploadedThisMonth": 7,
+    "documents": [
+      {
+        "id": "doc001",
+        "title": "Annual Physical Examination",
+        "date": "2025-03-28",
+        "provider": "Dr. Sarah Johnson",
+        "providerType": "General Practitioner",
+        "type": "examination",
+        "icon": "stethoscope",
+        "iconColor": "#6495ED"
+      },
+      {
+        "id": "doc002",
+        "title": "Blood Test Results",
+        "date": "2025-02-15",
+        "summary": "Cholesterol levels normal, Vitamin D slightly low",
+        "type": "lab",
+        "icon": "file-text",
+        "iconColor": "#DA70D6"
+      },
+      {
+        "id": "doc003",
+        "title": "Medication Prescription",
+        "date": "2025-01-10",
+        "summary": "Vitamin D Supplements - 1000 IU daily",
+        "type": "prescription",
+        "icon": "pill",
+        "iconColor": "#90EE90"
+      },
+      {
+        "id": "doc004",
+        "title": "Dental Checkup",
+        "date": "2024-12-05",
+        "provider": "Dr. Michael Chen",
+        "summary": "Routine cleaning and examination",
+        "type": "dental",
+        "icon": "file-text",
+        "iconColor": "#87CEEB"
+      },
+      {
+        "id": "doc005",
+        "title": "Allergy Test",
+        "date": "2024-11-20",
+        "summary": "Mild pollen allergy detected, no food allergies",
+        "type": "lab",
+        "icon": "alert-circle",
+        "iconColor": "#FFC0CB"
+      },
+      {
+        "id": "doc006",
+        "title": "X-Ray Results",
+        "date": "2024-10-15",
+        "summary": "Right ankle, no fractures detected",
+        "type": "imaging",
+        "icon": "file-text",
+        "iconColor": "#DA70D6"
+      },
+      {
+        "id": "doc007",
+        "title": "Ophthalmology Exam",
+        "date": "2024-09-22",
+        "provider": "Dr. Lisa Wong",
+        "summary": "Vision 20/20, no concerns",
+        "type": "examination",
+        "icon": "eye",
+        "iconColor": "#6495ED"
+      }
+    ]
+  }
+  

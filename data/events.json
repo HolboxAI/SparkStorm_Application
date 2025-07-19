@@ -1,0 +1,30 @@
+{
+    "totalEvents": 3,
+    "events": [
+      {
+        "id": "evt001",
+        "title": "Annual Physical Checkup",
+        "date": "2025-04-15T10:30:00Z",
+        "provider": "Dr. Sarah Miller",
+        "location": "Wellness Medical Center",
+        "notes": "Bring list of current medications",
+        "type": "appointment"
+      },
+      {
+        "id": "evt002",
+        "title": "Metformin Refill",
+        "date": "2025-04-20",
+        "type": "medication",
+        "notes": "Prescription expires on April 30"
+      },
+      {
+        "id": "evt003",
+        "title": "Dental Cleaning",
+        "date": "2025-05-10T14:00:00Z",
+        "provider": "Dr. Michael Chen",
+        "location": "Bright Smile Dental",
+        "type": "appointment"
+      }
+    ]
+  }
+  

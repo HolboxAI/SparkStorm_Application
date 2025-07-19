@@ -5,23 +5,19 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "myapp",
+    "scheme": "mediwallet",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.betoatexpo.modern-chat-app",
-      "associatedDomains": [
-        "applinks:quiet-bulldog-8.clerk.accounts.dev",
-        "webcredentials:quiet-bulldog-8.clerk.accounts.dev"
-      ]
+      "bundleIdentifier": "com.sparkstorm.mediwallet"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.betoatexpo.modernchatapp"
+      "package": "com.sparkstorm.mediwallet"
     },
     "web": {
       "bundler": "metro",
@@ -44,7 +40,7 @@
         "expo-build-properties",
         {
           "ios": {
-            "deploymentTarget": "16.0"
+            "deploymentTarget": "15.1"
           }
         }
       ]

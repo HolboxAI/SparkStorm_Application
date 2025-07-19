@@ -1,0 +1,11 @@
+{
+    "id": "user123",
+    "name": "Alex Johnson",
+    "email": "alex.johnson@example.com",
+    "profilePicture": "https://randomuser.me/api/portraits/men/32.jpg",
+    "dateJoined": "2024-01-15",
+    "healthScore": 92,
+    "healthScoreChange": 5,
+    "lastLogin": "2025-05-15T08:30:00Z"
+  }
+  
