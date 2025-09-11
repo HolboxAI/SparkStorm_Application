@@ -1,29 +1,48 @@
-# fastapi_project/app/database.py
+import os
+import json
+import boto3
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from app.config import settings
 
-# Create the SQLAlchemy engine
-engine = create_engine(
-    settings.DATABASE_URL,
-    # Required for SQLite, adjust pool settings for production databases like PostgreSQL
-    # pool_pre_ping=True # Example for PostgreSQL
-    # connect_args={"check_same_thread": False} # Only needed for SQLite
-)
+# ---- Fetch DB credentials from Secrets Manager ----
+def get_rds_secret(secret_name: str, region: str) -> dict:
+    client = boto3.client("secretsmanager", region_name=region)
+    response = client.get_secret_value(SecretId=secret_name)
+    return json.loads(response["SecretString"])
 
-# Create a configured "Session" class
+DATABASE_URL = None
+
+# Prefer Secrets Manager if configured
+if os.getenv("RDS_SECRET_NAME") and os.getenv("AWS_REGION"):
+    secret = get_rds_secret(os.getenv("RDS_SECRET_NAME"), os.getenv("AWS_REGION"))
+    db_user = secret["username"]
+    db_pass = secret["password"]
+    
+    # Other connection info from env
+    db_host = os.getenv("RDS_HOST")       # e.g. mydb.abc123xyz.us-east-1.rds.amazonaws.com
+    db_port = os.getenv("RDS_PORT", "5432")
+    db_name = os.getenv("RDS_DB", "postgres")
+
+    DATABASE_URL = f"postgresql+psycopg2://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
+else:
+    # Fallback to env var (e.g. for local dev or Neon)
+    DATABASE_URL = os.getenv("DATABASE_URL")
+
+# ---- SQLAlchemy setup ----
+# On RDS you usually don’t need sslmode=require unless you enabled SSL enforcement.
+# If Neon is your fallback, keep it.
+connect_args = {"sslmode": "require"} if "neon.tech" in DATABASE_URL else {}
+
+engine = create_engine(DATABASE_URL, connect_args=connect_args)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Create a Base class for declarative class definitions
 Base = declarative_base()
 
-# Dependency to get DB session
+# ---- FastAPI dependency ----
 def get_db():
-    """
-    FastAPI dependency that provides a database session.
-    Ensures the session is closed after the request.
-    """
+    """Provide a SQLAlchemy session per request."""
     db = SessionLocal()
     try:
         yield db

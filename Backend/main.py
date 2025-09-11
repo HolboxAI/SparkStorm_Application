@@ -39,7 +39,7 @@ async def read_root():
 
 # Import routers
 from app.routers.auth import router as auth_router
-from app.routers.users import router as users_router
+from app.routers.users import router as users_router 
 from app.routers.reports import router as reports_router
 from app.routers.chatbot import router as chatbot_router
 from app.routers.clerk_webhook import router as clerk_webhook_router

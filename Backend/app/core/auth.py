@@ -64,6 +64,7 @@ def get_current_user(
 ):
     user = db.query(User).filter(User.clerk_id == clerk_user_id).first()
     if not user:
+        print(f"User with Clerk ID {clerk_user_id} not found in database.")
         raise HTTPException(404, "User not found")
     print(f"Current user: {user.email} (ID: {user.clerk_id})")  # Debug log
     return user

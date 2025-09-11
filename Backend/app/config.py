@@ -42,38 +42,51 @@ class Settings(BaseSettings):
     # Gemini settings
     GEMINI_API_KEY: Optional[str] = None
 
-    AWS_REGION: str
-    AWS_ACCESS_KEY_ID: str
-    AWS_SECRET_ACCESS_KEY: str
+    # AWS settings
+    AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
+    AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")
+    AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
+    RDS_SECRET_NAME: str = os.getenv("RDS_SECRET_NAME", "")
+    AWS_S3_BUCKET: str = os.getenv("AWS_S3_BUCKET", "")  # ADD THIS LINE
+    AWS_S3_KMS_KEY_ID: Optional[str] = os.getenv("AWS_S3_KMS_KEY_ID", None)  # Optional KMS key
+
+    # Clerk settings (if needed)
+    CLERK_WEBHOOK_SECRET: Optional[str] = os.getenv("CLERK_WEBHOOK_SECRET")
+    CLERK_API_KEY: Optional[str] = os.getenv("CLERK_API_KEY")
+    CLERK_SECRET_KEY: Optional[str] = os.getenv("CLERK_SECRET_KEY")
 
     class Config:
-        # If your .env file is in the root directory (one level up from app/)
-        # env_file = "../.env"
-        # If your .env file is in the same directory as config.py
-        env_file = ".env" # Or specify the path if it's elsewhere
+        env_file = ".env"
         env_file_encoding = 'utf-8'
-        extra = "ignore" # Ignore extra fields from env file
+        extra = "ignore"
 
-    # Add validation and default values
+    # Add validation for AWS settings
+    @field_validator("AWS_S3_BUCKET", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY")
+    @classmethod
+    def validate_aws_settings(cls, v: str) -> str:
+        if not v:
+            print("WARNING: AWS settings not properly configured. S3 functionality will be disabled.")
+        return v
+
     @field_validator("AZURE_VISION_ENDPOINT", "AZURE_VISION_KEY")
     @classmethod
     def validate_azure_settings(cls, v: Optional[str]) -> Optional[str]:
         if not v:
-            print(f"WARNING: Azure Vision settings not properly configured. OCR functionality will be disabled.")
+            print("WARNING: Azure Vision settings not properly configured. OCR functionality will be disabled.")
         return v
         
     @field_validator("OPENAI_API_KEY")
     @classmethod
     def validate_openai_settings(cls, v: Optional[str]) -> Optional[str]:
         if not v:
-            print(f"WARNING: OpenAI API key not set. OpenAI functionality will be disabled.")
+            print("WARNING: OpenAI API key not set. OpenAI functionality will be disabled.")
         return v
     
     @field_validator("GEMINI_API_KEY")
     @classmethod
     def validate_gemini_settings(cls, v: Optional[str]) -> Optional[str]:
         if not v:
-            print(f"WARNING: Gemini API key not set. Gemini functionality will be disabled.")
+            print("WARNING: Gemini API key not set. Gemini functionality will be disabled.")
         return v
     
     # Add a method to check if OCR is configured
@@ -83,5 +96,9 @@ class Settings(BaseSettings):
     # Add a method to check if LLM is configured
     def is_llm_configured(self) -> bool:
         return bool(self.OPENAI_API_KEY)
+    
+    # Add a method to check if AWS S3 is configured
+    def is_s3_configured(self) -> bool:
+        return bool(self.AWS_S3_BUCKET and self.AWS_ACCESS_KEY_ID and self.AWS_SECRET_ACCESS_KEY)
 
 settings = Settings()

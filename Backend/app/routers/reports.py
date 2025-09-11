@@ -1,24 +1,53 @@
 # app/routers/reports.py
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form, status
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import os
 import shutil
 import uuid
 from datetime import datetime
+import boto3
+from botocore.client import Config as BotoConfig
+from botocore.exceptions import BotoCoreError, ClientError
 
 from ..models.users import User
 from ..models.reports import Reports
 from ..schemas.reports import ReportResponse
 from ..databse import get_db
 from ..core.auth import get_current_user
-# from ..services.azure_ocr import AzureOcrHelper
 from ..services.textract_helper import TextractHelper
 from ..services.document_store import DocumentStore
 from ..config import settings
 
 router = APIRouter()
+
+def _s3():
+    # Check if AWS credentials are configured
+    if not (hasattr(settings, 'AWS_ACCESS_KEY_ID') and settings.AWS_ACCESS_KEY_ID and
+            hasattr(settings, 'AWS_SECRET_ACCESS_KEY') and settings.AWS_SECRET_ACCESS_KEY):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AWS credentials are not configured"
+        )
+    
+    return boto3.client(
+        "s3",
+        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+        region_name=getattr(settings, "AWS_REGION", "us-east-1"),
+        config=BotoConfig(signature_version="s3v4")
+    )
+
+def _to_s3_uri(bucket: str, key: str) -> str:
+    return f"s3://{bucket}/{key}"
+
+def _from_s3_uri(uri: str) -> tuple[str, str]:
+    if not uri.startswith("s3://"):
+        raise ValueError("Not an S3 URI")
+    _, rest = uri.split("s3://", 1)
+    bucket, key = rest.split("/", 1)
+    return bucket, key
 
 @router.post("/upload", response_model=dict)
 async def upload_file(
@@ -27,61 +56,78 @@ async def upload_file(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    print("upload_file called")
+    
+    # Check if S3 is configured
+    if not (hasattr(settings, 'AWS_S3_BUCKET') and settings.AWS_S3_BUCKET):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="S3 storage is not configured. Please contact an administrator."
+        )
+    
+    # Prepare OCR helper early to fail fast if misconfigured
     try:
-        # Lazy initialization with error handling
-        try:
-            # ocr_helper = AzureOcrHelper()
-            ocr_helper = TextractHelper()
-        except ValueError as e:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="OCR service is not properly configured. Please contact an administrator."
-            )
-        
-        # Create user directory if it doesn't exist
-        user_dir = os.path.join(settings.UPLOAD_DIRECTORY, str(current_user.clerk_id))
-        os.makedirs(user_dir, exist_ok=True)
-        
-        # Create temp directory if it doesn't exist
-        temp_dir = os.path.join(settings.TEMP_DIRECTORY)
-        os.makedirs(temp_dir, exist_ok=True)
-        
-        # Generate a unique filename
-        file_extension = os.path.splitext(file.filename)[1]
-        unique_filename = f"{uuid.uuid4()}{file_extension}"
-        
-        # Save the file temporarily for OCR processing
-        temp_file_path = os.path.join(temp_dir, unique_filename)
+        ocr_helper = TextractHelper()
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="OCR service is not properly configured. Please contact an administrator."
+        )
+
+    print("here")
+    # Temp dir for OCR
+    temp_dir = os.path.join(settings.TEMP_DIRECTORY)
+    os.makedirs(temp_dir, exist_ok=True)
+
+    # Build a unique S3 key per user
+    file_extension = os.path.splitext(file.filename)[1]
+    unique_basename = f"{uuid.uuid4()}{file_extension}"
+    s3_key = f"users/{current_user.clerk_id}/{unique_basename}"
+    bucket = settings.AWS_S3_BUCKET
+
+    temp_file_path = os.path.join(temp_dir, unique_basename)
+    try:
+        # Save locally just for OCR
         with open(temp_file_path, "wb") as temp_file:
             shutil.copyfileobj(file.file, temp_file)
-        
-        # Extract text using Azure OCR
+
+        # OCR processing
         try:
             extracted_text = ocr_helper.extract_text_from_pdf(temp_file_path)
-            print(f"Extracted text: {extracted_text}")
         except Exception as e:
-            # Clean up temp file
-            if os.path.exists(temp_file_path):
-                os.remove(temp_file_path)
-            
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"OCR processing failed: {str(e)}"
             )
+
+        # Upload to S3
+        s3_client = _s3()
+        extra_args = {
+            "ContentType": file.content_type or "application/octet-stream",
+            "Metadata": {
+                "user_id": str(current_user.id),
+                "clerk_id": str(current_user.clerk_id),
+                "original_filename": file.filename,
+                "description": description or "",
+                "upload_date": datetime.utcnow().isoformat()
+            }
+        }
         
-        # Save the file to the user's directory
-        file_path = os.path.join(user_dir, unique_filename)
-        shutil.move(temp_file_path, file_path)
-        
-        # Create metadata for document store
+        # Add KMS encryption if configured
+        if getattr(settings, "AWS_S3_KMS_KEY_ID", None):
+            extra_args["ServerSideEncryption"] = "aws:kms"
+            extra_args["SSEKMSKeyId"] = settings.AWS_S3_KMS_KEY_ID
+
+        s3_client.upload_file(temp_file_path, bucket, s3_key, ExtraArgs=extra_args)
+
+        # Document store
         metadata = {
             "filename": file.filename,
             "description": description or "",
-            "upload_date": datetime.now().isoformat(),
-            "report_type": "pdf"
+            "upload_date": datetime.utcnow().isoformat(),
+            "report_type": "pdf",
+            "s3_uri": _to_s3_uri(bucket, s3_key)
         }
-        
-        # Store document in vector database
         try:
             document_store = DocumentStore()
             vector_store = document_store.store_document(
@@ -92,47 +138,51 @@ async def upload_file(
                 str(current_user.id)
             )
             document_store.persist_all()
-            print("vector store", vector_store)
         except Exception as e:
-            print(f"Error storing document vectors: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to store document vectors: {str(e)}"
             )
-        
-        # Save report to database
+
+        # Save DB record
         report = Reports(
-            file_path=file_path,
+            file_path=_to_s3_uri(bucket, s3_key),
             original_filename=file.filename,
             description=description,
             extracted_text=extracted_text,
             user_id=current_user.id
         )
-        
         db.add(report)
         db.commit()
         db.refresh(report)
-        
+
         return {
             "success": True,
             "message": "File uploaded and processed successfully",
             "extracted_text": extracted_text,
-            "report_id": report.id
+            "report_id": report.id,
+            "s3_uri": report.file_path
         }
-    
+
     except HTTPException:
         raise
+    except (BotoCoreError, ClientError) as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"S3 error: {str(e)}"
+        )
     except Exception as e:
-        # Clean up any temporary files
-        print(f"Error during file upload: {str(e)}")
-        temp_file_path = os.path.join(temp_dir, unique_filename) if 'unique_filename' in locals() else None
-        if temp_file_path and os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
-        
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"File upload failed: {str(e)}"
         )
+    finally:
+        # Clean up temp
+        try:
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+        except Exception:
+            pass
 
 @router.get("/files", response_model=List[ReportResponse])
 async def list_files(
@@ -140,7 +190,12 @@ async def list_files(
     current_user: User = Depends(get_current_user)
 ):
     try:
-        reports = db.query(Reports).filter(Reports.user_id == current_user.id).order_by(Reports.uploaded_at.desc()).all()
+        reports = (
+            db.query(Reports)
+            .filter(Reports.user_id == current_user.id)
+            .order_by(Reports.uploaded_at.desc())
+            .all()
+        )
         return reports
     except Exception as e:
         raise HTTPException(
@@ -159,13 +214,8 @@ async def get_file_details(
             Reports.id == report_id,
             Reports.user_id == current_user.id
         ).first()
-        
         if not report:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Report not found"
-            )
-        
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
         return report
     except HTTPException:
         raise
@@ -174,7 +224,7 @@ async def get_file_details(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve file details: {str(e)}"
         )
-    
+
 @router.delete("/files/{report_id}", response_model=dict)
 async def delete_file(
     report_id: int,
@@ -182,42 +232,34 @@ async def delete_file(
     current_user: User = Depends(get_current_user)
 ):
     try:
-        # Find the report by ID for the current user
         report = db.query(Reports).filter(
             Reports.id == report_id,
-            Reports.user_id == current_user.id  # Use the current user's ID
+            Reports.user_id == current_user.id
         ).first()
-        print(f"Deleting report with ID: {report_id} for user: {current_user.id}")
-        # Check if the report exists
-        
         if not report:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Report not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
 
-        # Remove the file from the filesystem
-        if os.path.exists(report.file_path):
-            os.remove(report.file_path)
+        # Delete from S3 if this is an S3-backed report
+        try:
+            bucket, key = _from_s3_uri(report.file_path)
+            _s3().delete_object(Bucket=bucket, Key=key)
+        except ValueError:
+            # legacy: file_path was a local path; try to remove it
+            if os.path.exists(report.file_path):
+                os.remove(report.file_path)
 
-        # Remove from the document store using the current_user.id
+        # Remove from vector store
         document_store = DocumentStore()
-        document_store.delete_document(report_id=report.id, user_id=current_user.clerk_id)  # Pass user_id dynamically
-        
-        # Delete the record from the database
+        document_store.delete_document(report_id=report.id, user_id=current_user.clerk_id)
+
         db.delete(report)
         db.commit()
 
-        return {
-            "success": True,
-            "message": "Report deleted successfully"
-        }
+        return {"success": True, "message": "Report deleted successfully"}
+    except (BotoCoreError, ClientError) as e:
+        raise HTTPException(status_code=502, detail=f"S3 error: {str(e)}")
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete file: {str(e)}"
-        )
-    
+        raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(e)}")
 
 @router.get("/files/{report_id}/download")
 async def download_file(
@@ -226,33 +268,58 @@ async def download_file(
     current_user: User = Depends(get_current_user)
 ):
     try:
-        # Find the report by ID for the current user
         report = db.query(Reports).filter(
             Reports.id == report_id,
-            Reports.user_id == current_user.id  # Ensure the file belongs to the current user
+            Reports.user_id == current_user.id
         ).first()
-        
         if not report:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Report not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
 
-        # Get the file path from the report
+        # If S3-backed, return a presigned URL
+        if report.file_path.startswith("s3://"):
+            bucket, key = _from_s3_uri(report.file_path)
+            try:
+                # Test if we can access the file first
+                s3_client = _s3()
+                
+                # Check if object exists and get its metadata
+                s3_client.head_object(Bucket=bucket, Key=key)
+                
+                # Generate presigned URL
+                params = {
+                    "Bucket": bucket,
+                    "Key": key,
+                    "ResponseContentDisposition": f'attachment; filename="{report.original_filename or os.path.basename(key)}"'
+                }
+                url = s3_client.generate_presigned_url(
+                    ClientMethod="get_object",
+                    Params=params,
+                    ExpiresIn=getattr(settings, "S3_PRESIGNED_EXPIRES", 900)
+                )
+                return JSONResponse({
+                    "url": url, 
+                    "expires_in": getattr(settings, "S3_PRESIGNED_EXPIRES", 900),
+                    "filename": report.original_filename
+                })
+            except (BotoCoreError, ClientError) as e:
+                print(f"S3 error details: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"S3 error: {str(e)}"
+                )
+
+        # Legacy local-file fallback
         file_path = report.file_path
-
-        # Check if the file exists
         if not os.path.exists(file_path):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="File not found on the server"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found on the server")
 
-        # Serve the file as a download response
-        return FileResponse(file_path, media_type='application/octet-stream', filename=os.path.basename(file_path))
+        raise HTTPException(status_code=410, detail="This report is stored locally and is no longer downloadable")
 
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"Download error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to download file: {str(e)}"
+            detail=f"Failed to generate download link: {str(e)}"
         )
