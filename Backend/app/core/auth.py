@@ -16,8 +16,8 @@ from ..config import settings
 from ..models.users import User
 from ..databse import get_db
 
-JWKS_URL = "https://quick-starfish-16.clerk.accounts.dev/.well-known/jwks.json"
-CLERK_ISSUER = "https://quick-starfish-16.clerk.accounts.dev"
+JWKS_URL =  os.getenv("JWKS_URL")
+CLERK_ISSUER = os.getenv("CLERK_ISSUER")
 CLERK_AUDIENCE = os.getenv("CLERK_API_KEY")
 
 jwks = requests.get(JWKS_URL).json()
