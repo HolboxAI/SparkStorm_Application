@@ -10,14 +10,41 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.sparkstorm.mediwallet"
+      "bundleIdentifier": "com.sparkstorm.mediwallet",
+      "usesAppleSignIn": false,
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true,
+          "NSExceptionDomains": {
+            "localhost": {
+              "NSIncludesSubdomains": true,
+              "NSTemporaryExceptionAllowsInsecureHTTPLoads": true,
+              "NSTemporaryExceptionMinimumTLSVersion": "1.0"
+            },
+            "127.0.0.1": {
+              "NSIncludesSubdomains": true,
+              "NSTemporaryExceptionAllowsInsecureHTTPLoads": true,
+              "NSTemporaryExceptionMinimumTLSVersion": "1.0"
+            },
+            "10.0.2.2": {
+              "NSIncludesSubdomains": true,
+              "NSTemporaryExceptionAllowsInsecureHTTPLoads": true,
+              "NSTemporaryExceptionMinimumTLSVersion": "1.0"
+            }
+          }
+        }
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.sparkstorm.mediwallet"
+      "package": "com.sparkstorm.mediwallet",
+      "usesCleartextTraffic": true,
+      "networkSecurityConfig": {
+        "cleartextTraffic": true
+      }
     },
     "web": {
       "bundler": "metro",
@@ -41,6 +68,12 @@
         {
           "ios": {
             "deploymentTarget": "15.1"
+          },
+          "android": {
+            "usesCleartextTraffic": true,
+            "networkSecurityConfig": {
+              "cleartextTraffic": true
+            }
           }
         }
       ]

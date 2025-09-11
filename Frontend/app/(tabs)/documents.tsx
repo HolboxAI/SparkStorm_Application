@@ -17,7 +17,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 const BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
-
 export default function DocumentsScreen() {
 
   const [documents, setDocuments] = useState<any[]>([])
@@ -56,10 +55,9 @@ const getToken = async () => {
  const fetchDocuments = async () => {
   setLoading(true);
   setError(null);
-
+  
   try {
     const token = await getToken();
-    
     const response = await fetch(`${BASE_URL}/api/reports/files`, {
       method: "GET",
       headers: {
@@ -68,21 +66,25 @@ const getToken = async () => {
       },
     });
     
+    
    if (!response.ok) {
       // If 401, refresh token and retry once
       if (response.status === 401) {
         const newToken = await getToken(); // Forces refresh
+        
         const retryResponse = await fetch(`${BASE_URL}/api/reports/files`, {
           method: "GET",
           headers: {
-            "Content-Type": "application/json",
+            "Content-Type": "application/json", 
             Authorization: `Bearer ${newToken}`,
           },
         });
         if (!retryResponse.ok) throw new Error("Retry failed");
+        
+        
         const retryData = await retryResponse.json();
         setDocuments(retryData);
-        return;
+
       }
       throw new Error(`Failed to fetch: ${response.statusText}`);
     }
@@ -92,6 +94,8 @@ const getToken = async () => {
     
     setDocuments(data);
   } catch (err) {
+    console.log("Error fetching documents:", err);
+    
     setError(err instanceof Error ? err : new Error(String(err)));
   } finally {
     setLoading(false);
@@ -277,71 +281,61 @@ const getToken = async () => {
     }
   };
   
-  const handleDownloadDocument = async (reportId,fileName) => {
+const handleDownloadDocument = async (reportId, fileName) => {
+  try {
     const token = await getToken();
-    console.log("Downloading report with ID:", reportId);
-  
-    try {
-      // Fetch the file from the backend
-      const response = await fetch(`${BASE_URL}/api/reports/files/${reportId}/download`, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-      });
-  
-      if (!response.ok) {
-      // If 401, refresh token and retry once
-      if (response.status === 401) {
-        const newToken = await getToken(); // Forces refresh
-        const retryResponse = await fetch(`${BASE_URL}/api/reports/files/${reportId}/download`, {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${newToken}`,
-          },
-        });
-        if (!retryResponse.ok) throw new Error("Retry failed");
-        const retryData = await retryResponse.json();
-        setDocuments(retryData);
-        return;
-      }
-      throw new Error(`Failed to fetch: ${response.statusText}`);
-    }
-  
-      // Get the file blob from the response
-      const blob = await response.blob();
-  
-      // Convert the blob to base64
-      const base64Data = await blobToBase64(blob);
-  
-      const fileExtension = fileName.split('.').pop();  // Extract extension from fileName
 
-    // Define the file URI where it will be saved, using the original extension
-      const fileUri = FileSystem.documentDirectory + `report_${reportId}.${fileExtension}`;
-  
-      // Save the file to the filesystem
-      await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-  
-      // If the file is available, use the Sharing API to trigger the download/open
-      const isAvailable = await Sharing.isAvailableAsync();
-      if (isAvailable) {
-        await Sharing.shareAsync(fileUri);
-      } else {
-        Alert.alert('Download', 'File has been downloaded but cannot be shared on this device.');
-      }
-  
-      console.log("File saved to:", fileUri);
-      Alert.alert("Success", "Report downloaded and ready for sharing.");
-  
-    } catch (error) {
-      console.error("Error downloading report:", error);
-      Alert.alert("Error", "Error downloading report: " + error.message);
+    // Step 1: Get presigned URL from backend
+    const response = await fetch(`${BASE_URL}/api/reports/files/${reportId}/download`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (response.status === 401) {
+      Alert.alert("Session Expired", "Please log in again to download this file.");
+      return;
     }
-  };
+
+    if (!response.ok) {
+      Alert.alert("Error", `Failed to get download link (status: ${response.status}).`);
+      return;
+    }
+
+    const { url, filename } = await response.json();
+    const finalFileName = fileName || filename || `report_${reportId}`;
+
+    // Step 2: Pick file extension safely
+    const fileExtension = finalFileName.includes(".")
+      ? finalFileName.split(".").pop()
+      : "dat"; // default if unknown
+
+    const fileUri = `${FileSystem.documentDirectory}${finalFileName}`;
+
+    // Step 3: Download the file directly to filesystem
+    const downloadRes = await FileSystem.downloadAsync(url, fileUri);
+
+    if (downloadRes.status !== 200) {
+      Alert.alert("Error", "Failed to download file from S3.");
+      return;
+    }
+
+    // Step 4: Share or notify user
+    const isAvailable = await Sharing.isAvailableAsync();
+    if (isAvailable) {
+      await Sharing.shareAsync(downloadRes.uri);
+    } else {
+      Alert.alert("Download Complete", `File saved to: ${downloadRes.uri}`);
+    }
+
+    console.log("File saved:", downloadRes.uri);
+
+  } catch (error) {
+    console.error("Download error:", error);
+    Alert.alert("Error", `Unable to download file: ${error.message}`);
+  }
+};
   
   // Helper function to convert the blob to base64
   const blobToBase64 = async (blob) => {
