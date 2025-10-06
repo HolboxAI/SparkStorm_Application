@@ -1,6 +1,7 @@
 "use client"
 
 import Ionicons from "@expo/vector-icons/Ionicons"
+import { Audio } from "expo-av"
 import { Image } from "expo-image"
 import { LinearGradient } from "expo-linear-gradient"
 import { router } from "expo-router"
@@ -15,6 +16,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Alert,
 } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
@@ -24,16 +26,15 @@ import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
 import { useAuth } from "@clerk/clerk-expo"
 
-const BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+const BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL
+const ASSEMBLYAI_API_KEY = process.env.EXPO_PUBLIC_ASSEMBLYAI_API_KEY
 
-// Sample predefined questions
 const SAMPLE_QUESTIONS = [
   "What do my recent blood test results mean?",
   "When should I take my medications?",
   "How can I improve my health score?",
 ]
 
-// Message type definition
 type Message = {
   id: string
   text: string
@@ -41,25 +42,19 @@ type Message = {
   timestamp: Date
 }
 
-// Typing indicator component with animation
 const TypingIndicator = () => {
   const colorScheme = useColorScheme() ?? "light"
   const isDark = colorScheme === "dark"
 
-  // Animation values for each dot
   const dot1Opacity = useRef(new Animated.Value(0.3)).current
   const dot2Opacity = useRef(new Animated.Value(0.3)).current
   const dot3Opacity = useRef(new Animated.Value(0.3)).current
-
-  // Animation values for dot scaling
   const dot1Scale = useRef(new Animated.Value(0.8)).current
   const dot2Scale = useRef(new Animated.Value(0.8)).current
   const dot3Scale = useRef(new Animated.Value(0.8)).current
 
-  // Run the animation sequence
   useEffect(() => {
     const animateDots = () => {
-      // Reset values
       dot1Opacity.setValue(0.3)
       dot2Opacity.setValue(0.3)
       dot3Opacity.setValue(0.3)
@@ -67,9 +62,7 @@ const TypingIndicator = () => {
       dot2Scale.setValue(0.8)
       dot3Scale.setValue(0.8)
 
-      // Sequence of animations
       Animated.sequence([
-        // Dot 1 animation
         Animated.parallel([
           Animated.timing(dot1Opacity, {
             toValue: 1,
@@ -84,8 +77,6 @@ const TypingIndicator = () => {
             easing: Easing.ease,
           }),
         ]),
-
-        // Dot 2 animation
         Animated.parallel([
           Animated.timing(dot2Opacity, {
             toValue: 1,
@@ -100,8 +91,6 @@ const TypingIndicator = () => {
             easing: Easing.ease,
           }),
         ]),
-
-        // Dot 3 animation
         Animated.parallel([
           Animated.timing(dot3Opacity, {
             toValue: 1,
@@ -117,7 +106,6 @@ const TypingIndicator = () => {
           }),
         ]),
       ]).start(() => {
-        // Restart the animation
         setTimeout(animateDots, 300)
       })
     }
@@ -125,7 +113,6 @@ const TypingIndicator = () => {
     animateDots()
 
     return () => {
-      // Cleanup animations on unmount
       dot1Opacity.stopAnimation()
       dot2Opacity.stopAnimation()
       dot3Opacity.stopAnimation()
@@ -173,7 +160,6 @@ const TypingIndicator = () => {
   )
 }
 
-// Message bubble component with animation
 const MessageBubble = ({
   message,
   colorScheme,
@@ -192,7 +178,6 @@ const MessageBubble = ({
   const isLatest = index === messagesLength - 1
 
   useEffect(() => {
-    // Only animate the latest message
     if (isLatest) {
       Animated.parallel([
         Animated.timing(fadeAnim, {
@@ -209,7 +194,6 @@ const MessageBubble = ({
         }),
       ]).start()
     } else {
-      // Set older messages to fully visible without animation
       fadeAnim.setValue(1)
       translateY.setValue(0)
     }
@@ -272,9 +256,15 @@ const MessageBubble = ({
   )
 }
 
-// Format time for message timestamps
 const formatTime = (date: Date): string => {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+}
+
+const formatDuration = (milliseconds: number): string => {
+  const seconds = Math.floor(milliseconds / 1000)
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return `${mins}:${secs.toString().padStart(2, "0")}`
 }
 
 export default function ChatScreen() {
@@ -294,11 +284,37 @@ export default function ChatScreen() {
   const flatListRef = useRef<FlatList>(null)
   const inputRef = useRef<TextInput>(null)
   const sendButtonScale = useRef(new Animated.Value(1)).current
-  // Add a new state to track input focus
   const [inputFocused, setInputFocused] = useState(false)
-  const { getToken } = useAuth();
+  const { getToken } = useAuth()
 
-  // Scroll to bottom when new messages are added
+  const [isRecording, setIsRecording] = useState(false)
+  const [recording, setRecording] = useState<Audio.Recording | null>(null)
+  const [recordingDuration, setRecordingDuration] = useState(0)
+  const [hasAudioPermission, setHasAudioPermission] = useState(false)
+  const [isTranscribing, setIsTranscribing] = useState(false)
+  const [isTypingAnimation, setIsTypingAnimation] = useState(false)
+  
+  const micScale = useRef(new Animated.Value(1)).current
+  const micPulse = useRef(new Animated.Value(1)).current
+  const recordingOpacity = useRef(new Animated.Value(0)).current
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const typingIntervalRef = useRef<NodeJS.Timeout | null>(null)
+
+  useEffect(() => {
+    (async () => {
+      const { status } = await Audio.requestPermissionsAsync()
+      setHasAudioPermission(status === "granted")
+      
+      if (status !== "granted") {
+        Alert.alert(
+          "Permission Required",
+          "Microphone permission is required for voice messages. Please enable it in your device settings.",
+          [{ text: "OK" }]
+        )
+      }
+    })()
+  }, [])
+
   useEffect(() => {
     if (messages.length > 0 && flatListRef.current) {
       setTimeout(() => {
@@ -307,13 +323,293 @@ export default function ChatScreen() {
     }
   }, [messages])
 
-  // Handle sending a message
-  const handleSendMessage = async (text: string = inputText) => {
-    if (!text.trim()) return;
+  useEffect(() => {
+    if (isRecording) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(micPulse, {
+            toValue: 1.2,
+            duration: 1000,
+            useNativeDriver: true,
+            easing: Easing.ease,
+          }),
+          Animated.timing(micPulse, {
+            toValue: 1,
+            duration: 1000,
+            useNativeDriver: true,
+            easing: Easing.ease,
+          }),
+        ])
+      ).start()
 
-    const token = await getToken();
-  
-    // Animate send button
+      Animated.timing(recordingOpacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }).start()
+    } else {
+      micPulse.stopAnimation()
+      micPulse.setValue(1)
+    }
+  }, [isRecording])
+
+  useEffect(() => {
+    if (isProcessing) {
+      Animated.timing(recordingOpacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }).start()
+    } else {
+      Animated.timing(recordingOpacity, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start()
+    }
+  }, [isProcessing])
+
+  useEffect(() => {
+    return () => {
+      if (typingIntervalRef.current) {
+        clearInterval(typingIntervalRef.current)
+      }
+    }
+  }, [])
+
+  const animateTextTyping = (fullText: string) => {
+    return new Promise<void>((resolve) => {
+      let currentIndex = 0
+      setInputText("")
+      setIsTypingAnimation(true)
+      
+      if (inputRef.current) {
+        inputRef.current.focus()
+      }
+
+      typingIntervalRef.current = setInterval(() => {
+        if (currentIndex <= fullText.length) {
+          setInputText(fullText.substring(0, currentIndex))
+          currentIndex++
+        } else {
+          if (typingIntervalRef.current) {
+            clearInterval(typingIntervalRef.current)
+            typingIntervalRef.current = null
+          }
+          setIsTypingAnimation(false)
+          resolve()
+        }
+      }, 30)
+    })
+  }
+
+  const startRecording = async () => {
+    if (!hasAudioPermission) {
+      Alert.alert(
+        "Permission Required",
+        "Microphone permission is required for voice messages.",
+        [{ text: "OK" }]
+      )
+      return
+    }
+
+    try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      })
+
+      const { recording: newRecording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      )
+
+      setRecording(newRecording)
+      setIsRecording(true)
+      setRecordingDuration(0)
+      setShowSampleQuestions(false)
+
+      Animated.spring(micScale, {
+        toValue: 1.1,
+        useNativeDriver: true,
+      }).start()
+
+      const startTime = Date.now()
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration(Date.now() - startTime)
+      }, 100)
+    } catch (err) {
+      console.error("Failed to start recording", err)
+      Alert.alert("Error", "Failed to start recording. Please try again.")
+    }
+  }
+
+  const processVoiceInput = async (audioUri: string) => {
+    setIsTranscribing(true)
+
+    try {
+      if (!ASSEMBLYAI_API_KEY) {
+        throw new Error('AssemblyAI API key not configured')
+      }
+
+      const audioData = await fetch(audioUri)
+      const audioBlob = await audioData.blob()
+
+      const uploadResponse = await fetch('https://api.assemblyai.com/v2/upload', {
+        method: 'POST',
+        headers: {
+          'authorization': ASSEMBLYAI_API_KEY,
+        },
+        body: audioBlob,
+      })
+
+      if (!uploadResponse.ok) {
+        throw new Error('Failed to upload audio to AssemblyAI')
+      }
+
+      const { upload_url } = await uploadResponse.json()
+
+      const transcriptResponse = await fetch('https://api.assemblyai.com/v2/transcript', {
+        method: 'POST',
+        headers: {
+          'authorization': ASSEMBLYAI_API_KEY,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          audio_url: upload_url,
+          language_code: 'en',
+        }),
+      })
+
+      if (!transcriptResponse.ok) {
+        throw new Error('Failed to create transcription job')
+      }
+
+      const { id: transcriptId } = await transcriptResponse.json()
+
+      let transcription = ''
+      let attempts = 0
+      const maxAttempts = 60
+
+      while (attempts < maxAttempts) {
+        const pollingResponse = await fetch(
+          `https://api.assemblyai.com/v2/transcript/${transcriptId}`,
+          {
+            headers: {
+              'authorization': ASSEMBLYAI_API_KEY,
+            },
+          }
+        )
+
+        const result = await pollingResponse.json()
+
+        if (result.status === 'completed') {
+          transcription = result.text
+          break
+        } else if (result.status === 'error') {
+          throw new Error('Transcription failed: ' + result.error)
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        attempts++
+      }
+
+      setIsTranscribing(false)
+
+      if (transcription && transcription.trim()) {
+        await animateTextTyping(transcription.trim())
+      } else {
+        Alert.alert("No Speech Detected", "Please try speaking again.")
+      }
+    } catch (error) {
+      console.error("Voice processing error:", error)
+      setIsTranscribing(false)
+      Alert.alert("Error", "Failed to process voice input. Please try again.")
+    }
+  }
+
+  const stopRecording = async () => {
+    if (!recording) return
+
+    try {
+      setIsRecording(false)
+      
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current)
+        recordingTimerRef.current = null
+      }
+
+      Animated.spring(micScale, {
+        toValue: 1,
+        useNativeDriver: true,
+      }).start()
+
+      await recording.stopAndUnloadAsync()
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+      })
+
+      const uri = recording.getURI()
+      setRecording(null)
+      setRecordingDuration(0)
+
+      if (uri) {
+        await processVoiceInput(uri)
+      }
+    } catch (err) {
+      console.error("Failed to stop recording", err)
+      Alert.alert("Error", "Failed to process recording. Please try again.")
+      setRecording(null)
+      setRecordingDuration(0)
+      setIsTranscribing(false)
+    }
+  }
+
+  const cancelRecording = async () => {
+    if (!recording) return
+
+    try {
+      setIsRecording(false)
+      
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current)
+        recordingTimerRef.current = null
+      }
+
+      if (typingIntervalRef.current) {
+        clearInterval(typingIntervalRef.current)
+        typingIntervalRef.current = null
+      }
+
+      Animated.spring(micScale, {
+        toValue: 1,
+        useNativeDriver: true,
+      }).start()
+
+      await recording.stopAndUnloadAsync()
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+      })
+
+      setRecording(null)
+      setRecordingDuration(0)
+      setIsTranscribing(false)
+      setIsTypingAnimation(false)
+      setInputText("")
+    } catch (err) {
+      console.error("Failed to cancel recording", err)
+    }
+  }
+
+  const handleSendMessage = async (text: string = inputText) => {
+    if (!text.trim()) return
+
+    if (typingIntervalRef.current) {
+      clearInterval(typingIntervalRef.current)
+      typingIntervalRef.current = null
+    }
+
+    const token = await getToken()
+
     Animated.sequence([
       Animated.timing(sendButtonScale, {
         toValue: 0.8,
@@ -327,100 +623,73 @@ export default function ChatScreen() {
         useNativeDriver: true,
         easing: Easing.bounce,
       }),
-    ]).start();
-  
-    // Add user message
+    ]).start()
+
     const userMessage: Message = {
       id: Date.now().toString(),
       text: text.trim(),
       isUser: true,
       timestamp: new Date(),
-    };
-  
-    setMessages((prev) => [...prev, userMessage]);
-    setInputText("");
-    setIsTyping(true);
-    setShowSampleQuestions(false);
-  
-    // Blur the input to hide keyboard
-    if (inputRef.current) {
-      inputRef.current.blur();
     }
-    setInputFocused(false);
-  
-    // Simulate API request to the backend
+
+    setMessages((prev) => [...prev, userMessage])
+    setInputText("")
+    setIsTyping(true)
+    setShowSampleQuestions(false)
+
+    if (inputRef.current) {
+      inputRef.current.blur()
+    }
+    setInputFocused(false)
+
     try {
       const response = await fetch(`${BASE_URL}/api/chatbot/chat`, {
         method: "POST",
         headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ query: text.trim() }),
-      });
-  
+      })
+
       if (!response.ok) {
-        throw new Error("Failed to fetch response from backend.");
+        throw new Error("Failed to fetch response from backend.")
       }
-  
-      // Parse the response to JSON
-      const result = await response.json();
-  
-      // Log the result to the console
-      console.log(result);
-  
-      // Handle the response here (for example, update the messages array)
+
+      const result = await response.json()
+      console.log(result)
+
       const botResponse: Message = {
         id: (Date.now() + 1).toString(),
-        text: result.message,  // Adjust based on the structure of the response
+        text: result.message,
         isUser: false,
         timestamp: new Date(),
-      };
-  
-      setIsTyping(false);
-      setMessages((prev) => [...prev, botResponse]);
+      }
+
+      setIsTyping(false)
+      setMessages((prev) => [...prev, botResponse])
     } catch (error) {
-      setIsTyping(false);
+      setIsTyping(false)
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         text: "Sorry, something went wrong. Please try again later.",
         isUser: false,
         timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, errorMessage]);
-    }
-  };
-  
-
-  // Get a bot response based on the user's message
-  const getBotResponse = (message: string): string => {
-    const lowerMessage = message.toLowerCase()
-
-    if (lowerMessage.includes("blood test") || lowerMessage.includes("results")) {
-      return "Your recent blood test from February 15, 2025 shows normal cholesterol levels, which is good news. However, your Vitamin D is slightly below the recommended range. This is why Dr. Johnson prescribed Vitamin D supplements (1000 IU daily)."
-    } else if (lowerMessage.includes("medication") || lowerMessage.includes("take")) {
-      return "Based on your current prescriptions, you should take your Vitamin D supplement once daily with food. It's best absorbed when taken with a meal that contains some fat. Many people find taking it with breakfast or dinner works well."
-    } else if (lowerMessage.includes("health") || lowerMessage.includes("score") || lowerMessage.includes("improve")) {
-      return "Your health score is currently 92%, which is excellent! To maintain or improve this score, consider increasing your daily steps to 10,000, ensuring you get 7-8 hours of sleep, and maintaining a balanced diet rich in vegetables and lean proteins."
-    } else {
-      return (
-        "I understand you're asking about " +
-        message +
-        ". Let me check your health records for relevant information. Is there anything specific you'd like to know about this topic?"
-      )
+      }
+      setMessages((prev) => [...prev, errorMessage])
     }
   }
 
-  // Handle back button press
   const handleBack = () => {
+    if (isRecording) {
+      cancelRecording()
+    }
     router.back()
   }
 
-  // Sample question animation values
   const sampleQuestionsOpacity = useRef(new Animated.Value(1)).current
-  const sampleQuestionsHeight = useRef(new Animated.Value(180)).current // Approximate height of sample questions
+  const sampleQuestionsHeight = useRef(new Animated.Value(180)).current
 
-  // Animate sample questions disappearing
   useEffect(() => {
     if (!showSampleQuestions && sampleQuestionsOpacity._value !== 0) {
       Animated.parallel([
@@ -440,10 +709,11 @@ export default function ChatScreen() {
     }
   }, [showSampleQuestions])
 
+  const isProcessing = isRecording || isTranscribing || isTypingAnimation
+
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
-        {/* Header */}
         <View style={[styles.header, { borderBottomColor: isDark ? Colors.dark.border : Colors.light.border }]}>
           <TouchableOpacity onPress={handleBack} style={styles.backButton}>
             <Ionicons name="arrow-back" size={24} color={isDark ? Colors.dark.text : Colors.light.text} />
@@ -458,7 +728,6 @@ export default function ChatScreen() {
         </View>
 
         <View style={styles.contentContainer}>
-          {/* Chat Messages */}
           <FlatList
             ref={flatListRef}
             data={messages}
@@ -471,7 +740,6 @@ export default function ChatScreen() {
             ListFooterComponent={isTyping ? <TypingIndicator /> : null}
           />
 
-          {/* Sample Questions */}
           <Animated.View
             style={[
               styles.sampleQuestionsContainer,
@@ -500,7 +768,35 @@ export default function ChatScreen() {
           </Animated.View>
         </View>
 
-        {/* Input Area - Now outside the KeyboardAvoidingView */}
+        {isProcessing && (
+          <Animated.View
+            style={[
+              styles.recordingIndicator,
+              {
+                opacity: recordingOpacity,
+                backgroundColor: isDark ? "rgba(108, 99, 255, 0.15)" : "rgba(108, 99, 255, 0.1)",
+              },
+            ]}
+          >
+            <View style={styles.recordingContent}>
+              <View style={[styles.recordingDot, { backgroundColor: "#6C63FF" }]} />
+              <ThemedText style={styles.recordingText}>
+                {isRecording ? "Recording..." : isTranscribing ? "Transcribing..." : "Processing..."}
+              </ThemedText>
+              {isRecording && (
+                <ThemedText style={[styles.recordingDuration, { color: "#6C63FF" }]}>
+                  {formatDuration(recordingDuration)}
+                </ThemedText>
+              )}
+              {isRecording && (
+                <TouchableOpacity onPress={cancelRecording} style={styles.cancelButton}>
+                  <ThemedText style={styles.cancelButtonText}>Cancel</ThemedText>
+                </TouchableOpacity>
+              )}
+            </View>
+          </Animated.View>
+        )}
+
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
           keyboardVerticalOffset={Platform.OS === "ios" ? 10 : 0}
@@ -510,7 +806,7 @@ export default function ChatScreen() {
               <TextInput
                 ref={inputRef}
                 style={[styles.input, { color: isDark ? Colors.dark.text : Colors.light.text }]}
-                placeholder="Type a message..."
+                placeholder={isTranscribing ? "Transcribing..." : "Type a message..."}
                 placeholderTextColor={isDark ? "#9BA1A6" : "#687076"}
                 value={inputText}
                 onChangeText={setInputText}
@@ -519,23 +815,63 @@ export default function ChatScreen() {
                 onFocus={() => setInputFocused(true)}
                 onBlur={() => setInputFocused(false)}
               />
-              <Animated.View style={{ transform: [{ scale: sendButtonScale }] }}>
-                <TouchableOpacity
-                  style={[styles.sendButton, { opacity: inputText.trim() ? 1 : 0.5 }]}
-                  onPress={() => handleSendMessage()}
-                  disabled={!inputText.trim()}
-                  activeOpacity={0.7}
-                >
-                  <LinearGradient
-                    colors={["#6C63FF", "#8F7FFF"]}
-                    style={styles.sendButtonGradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
+              
+              {!inputText.trim() && !isRecording && !isTranscribing && !isTypingAnimation && (
+                <Animated.View style={{ transform: [{ scale: micScale }] }}>
+                  <TouchableOpacity
+                    style={styles.micButton}
+                    onPress={startRecording}
+                    activeOpacity={0.7}
                   >
-                    <Ionicons name="send" size={20} color="#FFFFFF" />
-                  </LinearGradient>
-                </TouchableOpacity>
-              </Animated.View>
+                    <Ionicons name="mic" size={24} color="#6C63FF" />
+                  </TouchableOpacity>
+                </Animated.View>
+              )}
+
+              {isRecording && (
+                <Animated.View style={{ transform: [{ scale: micPulse }] }}>
+                  <TouchableOpacity
+                    style={styles.micButtonActive}
+                    onPress={stopRecording}
+                    activeOpacity={0.7}
+                  >
+                    <LinearGradient
+                      colors={["#6C63FF", "#8F7FFF"]}
+                      style={styles.micButtonGradient}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    >
+                      <Ionicons name="stop" size={20} color="#FFFFFF" />
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </Animated.View>
+              )}
+
+              {isTranscribing && (
+                <View style={styles.loadingButton}>
+                  <Ionicons name="hourglass-outline" size={20} color="#6C63FF" />
+                </View>
+              )}
+
+              {inputText.trim() && !isRecording && !isTranscribing && !isTypingAnimation && (
+                <Animated.View style={{ transform: [{ scale: sendButtonScale }] }}>
+                  <TouchableOpacity
+                    style={[styles.sendButton, { opacity: inputText.trim() ? 1 : 0.5 }]}
+                    onPress={() => handleSendMessage()}
+                    disabled={!inputText.trim()}
+                    activeOpacity={0.7}
+                  >
+                    <LinearGradient
+                      colors={["#6C63FF", "#8F7FFF"]}
+                      style={styles.sendButtonGradient}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    >
+                      <Ionicons name="send" size={20} color="#FFFFFF" />
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </Animated.View>
+              )}
             </View>
           </View>
         </KeyboardAvoidingView>
@@ -588,10 +924,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
   },
   headerRight: {
-    width: 40, // Balance the header
-  },
-  keyboardAvoidingView: {
-    flex: 1,
+    width: 40,
   },
   messagesList: {
     paddingHorizontal: 16,
@@ -678,7 +1011,7 @@ const styles = StyleSheet.create({
   },
   sampleQuestionsContainer: {
     padding: 16,
-    flex:1,
+    flex: 1,
     justifyContent: "flex-end",
     marginBottom: 8,
   },
@@ -738,5 +1071,76 @@ const styles = StyleSheet.create({
     height: "100%",
     justifyContent: "center",
     alignItems: "center",
+  },
+  micButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 8,
+  },
+  micButtonActive: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 8,
+    overflow: "hidden",
+  },
+  micButtonGradient: {
+    width: "100%",
+    height: "100%",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 8,
+  },
+  recordingIndicator: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#6C63FF",
+  },
+  recordingContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  recordingDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 8,
+  },
+  recordingText: {
+    fontSize: 14,
+    fontWeight: "500",
+    marginRight: 8,
+    flex: 1,
+    color: "#6C63FF",
+  },
+  recordingDuration: {
+    fontSize: 14,
+    fontWeight: "600",
+    marginRight: 16,
+  },
+  cancelButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: "rgba(108, 99, 255, 0.2)",
+  },
+  cancelButtonText: {
+    color: "#6C63FF",
+    fontWeight: "600",
+    fontSize: 14,
   },
 })
