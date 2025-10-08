@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, SafeAreaView } from "react-native";
+import { View, SafeAreaView, Platform } from "react-native";
 import { Image } from "expo-image";
 import * as WebBrowser from "expo-web-browser";
 import * as AuthSession from "expo-auth-session";
@@ -32,9 +32,36 @@ export default function Index() {
           redirectUrl: AuthSession.makeRedirectUri(),
         });
 
-        console.log("createdSessionId:", createdSessionId);
+      console.log("createdSessionId:", createdSessionId);
       // If the user is already signed in, `createdSessionId` will be undefined
-        
+
+      // If sign in was successful, set the active session
+      if (createdSessionId) {
+        setActive!({ session: createdSessionId });
+      } else {
+        // If there is no `createdSessionId`,
+        // there are missing requirements, such as MFA
+        // Use the `signIn` or `signUp` returned from `startSSOFlow`
+        // to handle next steps
+      }
+    } catch (err) {
+      // See https://clerk.com/docs/custom-flows/error-handling
+      // for more info on error handling
+      if (isClerkAPIResponseError(err)) setErrors(err.errors);
+      console.error(JSON.stringify(err, null, 2));
+    }
+  }, []);
+
+  const handleSignInWithApple = React.useCallback(async () => {
+    try {
+      // Start the Apple authentication process
+      const { createdSessionId, setActive, signIn, signUp } =
+        await startSSOFlow({
+          strategy: "oauth_apple",
+          redirectUrl: AuthSession.makeRedirectUri(),
+        });
+
+      console.log("Apple createdSessionId:", createdSessionId);
 
       // If sign in was successful, set the active session
       if (createdSessionId) {
@@ -92,12 +119,29 @@ export default function Index() {
       >
         <View style={{ gap: 20, alignItems: "center" }}>
           <Image
-            source={require("@/assets/images/MediWallet.svg")}
-            style={{ width: 200, height: 200, resizeMode: "contain", marginBottom: -20 }}
+            source={require("@/assets/images/Logo2.png")}
+            style={{
+              width: 200,
+              height: 200,
+              resizeMode: "contain",
+              marginBottom: -20,
+            }}
             contentFit="contain"
             alt="MediWallet Logo"
           />
-          <Text style={{ fontSize:15, fontFamily: 'Roboto'}}>Your AI-Powered Health Assistant.</Text>
+          <Text
+            style={{
+              fontSize: 24,
+              fontFamily: "Trebuchet MS",
+              fontWeight: "700",
+              color: "#2596be",
+            }}
+          >
+            MediWallet - Health Passport
+          </Text>
+          <Text style={{ fontSize: 12, fontFamily: "Roboto" }}>
+            Your AI-Powered Health Assistant.
+          </Text>
           {errors.map((error) => (
             <Text key={error.code}>{error.code}</Text>
           ))}
@@ -105,7 +149,31 @@ export default function Index() {
 
         {/* spacer */}
         <View style={{ flex: 1 }} />
-        
+
+        {/* Apple Sign In Button - Show on iOS or all platforms */}
+        <Button
+          onPress={handleSignInWithApple}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 10,
+            marginBottom: 15,
+            backgroundColor: "#000",
+            borderWidth:1,
+            borderColor:"white"
+          }}
+        >
+          <Image
+            source={require("@/assets/images/apple-icon.png")}
+            style={{ width: 20, height: 20 }}
+          />
+          <Text style={{ color: "white", fontWeight: "500" }}>
+            Sign in with Apple
+          </Text>
+        </Button>
+
+        {/* Google Sign In Button */}
         <Button
           onPress={handleSignInWithGoogle}
           style={{

@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "modern-chat-app",
-    "slug": "modern-chat-app",
+    "name": "Mediwallet - Health Passport",
+    "slug": "mediwallet",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
