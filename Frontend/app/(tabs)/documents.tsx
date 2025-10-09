@@ -14,11 +14,11 @@ import { useEffect, useRef, useState } from "react";
 import { Alert, FlatList, Modal, StyleSheet, Text, TouchableOpacity, useColorScheme, View } from "react-native";
 import { MenuProvider } from "react-native-popup-menu";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { requestMediaLibraryPermissions, showPermissionRationale } from "@/utils/permissions";
 
 const BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 export default function DocumentsScreen() {
-
   const [documents, setDocuments] = useState<any[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
@@ -34,136 +34,175 @@ export default function DocumentsScreen() {
 
   const { getToken: getClerkToken } = useAuth();
 
-const getToken = async () => {
-  try {
-    // First try to get the token
-    const token = await getClerkToken();
-    if (!token) throw new Error("No token available");
-    return token;
-  } catch (error) {
-    console.error("Token error, attempting refresh:", error);
-    // Force a fresh token if the first one fails
-    const refreshedToken = await getClerkToken({ forceRefresh: true });
-    if (!refreshedToken) throw new Error("Failed to refresh token");
-    return refreshedToken;
-  }
-};
+  const getToken = async () => {
+    try {
+      const token = await getClerkToken();
+      if (!token) throw new Error("No token available");
+      return token;
+    } catch (error) {
+      console.error("Token error, attempting refresh:", error);
+      const refreshedToken = await getClerkToken({ forceRefresh: true });
+      if (!refreshedToken) throw new Error("Failed to refresh token");
+      return refreshedToken;
+    }
+  };
+
   useEffect(() => {
     fetchDocuments();
   }, []);
 
- const fetchDocuments = async () => {
-  setLoading(true);
-  setError(null);
-  
-  try {
-    const token = await getToken();
-    const response = await fetch(`${BASE_URL}/api/reports/files`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-    });
+  const fetchDocuments = async () => {
+    setLoading(true);
+    setError(null);
     
-    
-   if (!response.ok) {
-      // If 401, refresh token and retry once
-      if (response.status === 401) {
-        const newToken = await getToken(); // Forces refresh
-        
-        const retryResponse = await fetch(`${BASE_URL}/api/reports/files`, {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json", 
-            Authorization: `Bearer ${newToken}`,
-          },
-        });
-        if (!retryResponse.ok) throw new Error("Retry failed");
-        
-        
-        const retryData = await retryResponse.json();
-        setDocuments(retryData);
-
-      }
-      throw new Error(`Failed to fetch: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    console.log("Fetched documents:", data);
-    
-    setDocuments(data);
-  } catch (err) {
-    console.log("Error fetching documents:", err);
-    
-    setError(err instanceof Error ? err : new Error(String(err)));
-  } finally {
-    setLoading(false);
-  }
-};
-
-
-    // Show message function
-    const showNotification = (type: 'success' | 'error', text: string) => {
-      setMessageType(type)
-      setMessageText(text)
-      setShowMessage(true)
-      
-      // Auto hide after 3 seconds
-      setTimeout(() => {
-        setShowMessage(false)
-      }, 3000)
-    }
-
-  const handleUploadDocument = async () => {
-
     try {
       const token = await getToken();
-      // Reset states
+      const response = await fetch(`${BASE_URL}/api/reports/files`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      if (!response.ok) {
+        if (response.status === 401) {
+          const newToken = await getToken();
+          
+          const retryResponse = await fetch(`${BASE_URL}/api/reports/files`, {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json", 
+              Authorization: `Bearer ${newToken}`,
+            },
+          });
+          if (!retryResponse.ok) throw new Error("Retry failed");
+          
+          const retryData = await retryResponse.json();
+          setDocuments(retryData);
+          return;
+        }
+        throw new Error(`Failed to fetch: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.log("Fetched documents:", data);
+      
+      setDocuments(data);
+    } catch (err) {
+      console.log("Error fetching documents:", err);
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const showNotification = (type: 'success' | 'error', text: string) => {
+    setMessageType(type)
+    setMessageText(text)
+    setShowMessage(true)
+    
+    setTimeout(() => {
+      setShowMessage(false)
+    }, 3000)
+  }
+
+  const handleUploadDocument = async () => {
+    try {
+      // Step 1: Show educational rationale
+      const shouldContinue = await new Promise<boolean>((resolve) => {
+        showPermissionRationale(
+          'media-library',
+          () => resolve(true),
+          () => resolve(false)
+        );
+      });
+
+      if (!shouldContinue) {
+        return;
+      }
+
+      // Step 2: Request permissions
+      const permissionResult = await requestMediaLibraryPermissions('upload');
+      
+      if (!permissionResult.granted) {
+        console.log('Permission denied for media library');
+        return;
+      }
+
+      // Step 3: Show file type information
+      const shouldSelectFile = await new Promise<boolean>((resolve) => {
+        Alert.alert(
+          "Upload Medical Document",
+          "Select medical documents from your library such as lab reports, prescriptions, X-rays, or other health records.\n\nSupported formats: PDF, JPG, PNG\nMaximum file size: 10MB",
+          [
+            {
+              text: "Cancel",
+              onPress: () => resolve(false),
+              style: "cancel"
+            },
+            {
+              text: "Choose File",
+              onPress: () => resolve(true)
+            }
+          ]
+        );
+      });
+
+      if (!shouldSelectFile) {
+        return;
+      }
+
+      // Step 4: Get token
+      const token = await getToken();
+      
       setIsUploading(false);
       setUploadProgress(0);
   
-      // Open document picker
+      // Step 5: Pick document
       const result = await DocumentPicker.getDocumentAsync({
         type: ["application/pdf", "image/*"],
         copyToCacheDirectory: true,
+        multiple: false,
       });
   
-      // Check if user canceled the picker
       if (result.canceled) {
         console.log("User canceled document selection");
-        return; // Exit silently since this is a user-initiated cancel
+        return;
       }
   
-      // Check if we actually got files
       if (!result.assets || result.assets.length === 0) {
         throw new Error("No files were selected");
       }
+
+      const file = result.assets[0];
+
+      // Step 6: Validate file size (max 10MB)
+      const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+      if (file.size && file.size > MAX_FILE_SIZE) {
+        Alert.alert(
+          "File Too Large",
+          "Please select a file smaller than 10MB. Large files may take longer to upload and process.",
+          [{ text: "OK" }]
+        );
+        return;
+      }
   
-      // Show loading state
+      // Step 7: Upload
       setIsUploading(true);
       
-      // Start progress animation
       if (lottieRef.current) {
         lottieRef.current.play();
       }
   
-      // Prepare FormData
       const formData = new FormData();
-      const file = result.assets[0]; // Get first selected file
       
       formData.append("file", {
         uri: file.uri,
         name: file.name || `document_${Date.now()}`,
         type: file.mimeType || 'application/octet-stream',
-      });
+      } as any);
   
-      // Optional description
-      if (file.description) {
-        formData.append("description", file.description);
-      }
-  
-      // Upload progress simulation (optional)
       const progressInterval = setInterval(() => {
         setUploadProgress(prev => {
           const newProgress = prev + 0.05;
@@ -172,13 +211,12 @@ const getToken = async () => {
       }, 100);
   
       try {
-        // Actual upload
         const response = await fetch(`${BASE_URL}/api/reports/upload`, {
           method: "POST",
           body: formData,
           headers: {
             'Content-Type': 'multipart/form-data',
-             Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${token}`,
           },
         });
   
@@ -192,10 +230,9 @@ const getToken = async () => {
   
         const data = await response.json();
   
-        // Handle successful upload
         const newDocument = {
-          id: `doc-${Date.now()}`,
-          description: file.description || "",
+          id: data.id || `doc-${Date.now()}`,
+          description: data.description || "",
           file_path: data.file_path || file.uri,
           uploaded_at: new Date().toISOString(),
           original_filename: file.name || "document",
@@ -205,23 +242,32 @@ const getToken = async () => {
   
         setDocuments(prev => [newDocument, ...prev]);
         
+        showNotification('success', `${file.name} uploaded successfully!`);
+        
       } catch (uploadError) {
         clearInterval(progressInterval);
         throw uploadError;
       }
   
-    } catch (error) {
+    } catch (error: any) {
       console.error("Document upload error:", error);
+      
+      // User-friendly error messages
+      let errorMessage = "Failed to upload document. Please try again.";
+      
+      if (error.message?.includes("network")) {
+        errorMessage = "Network error. Please check your connection and try again.";
+      } else if (error.message?.includes("timeout")) {
+        errorMessage = "Upload timed out. Please try again with a smaller file.";
+      } else if (error.message && error.message !== "User canceled document selection") {
+        errorMessage = error.message;
+      }
       
       // Only show alert for actual errors (not cancellations)
       if (error.message !== "User canceled document selection") {
-        Alert.alert(
-          "Upload Error", 
-          error.message || "Failed to upload document. Please try again."
-        );
+        Alert.alert("Upload Failed", errorMessage, [{ text: "OK" }]);
       }
     } finally {
-      // Reset states
       setTimeout(() => {
         setIsUploading(false);
         setUploadProgress(0);
@@ -230,121 +276,189 @@ const getToken = async () => {
   };
   
   const handleDeleteDocument = async (reportId: string) => {
-    const token = await getToken();
-    console.log("Deleting report with ID:", reportId);
+    const shouldDelete = await new Promise<boolean>((resolve) => {
+      Alert.alert(
+        "Delete Document",
+        "Are you sure you want to delete this medical document? This action cannot be undone.",
+        [
+          {
+            text: "Cancel",
+            onPress: () => resolve(false),
+            style: "cancel"
+          },
+          {
+            text: "Delete",
+            onPress: () => resolve(true),
+            style: "destructive"
+          }
+        ]
+      );
+    });
+
+    if (!shouldDelete) {
+      return;
+    }
     
-    // Set loading state for this specific document
     setIsDeleting(reportId)
     
     try {
+      const token = await getToken();
+      
       const response = await fetch(`${BASE_URL}/api/reports/files/${reportId}`, {
         method: "DELETE",
-       headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-       },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
       });
   
       if (!response.ok) {
-      // If 401, refresh token and retry once
-      if (response.status === 401) {
-        const newToken = await getToken(); // Forces refresh
-        const retryResponse = await fetch(`${BASE_URL}/api/reports/files/${reportId}`, {
-          method: "DELETE",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${newToken}`,
-          },
-        });
-        if (!retryResponse.ok) throw new Error("Retry failed");
-        const retryData = await retryResponse.json();
-        setDocuments(retryData);
-        return;
+        if (response.status === 401) {
+          const newToken = await getToken();
+          const retryResponse = await fetch(`${BASE_URL}/api/reports/files/${reportId}`, {
+            method: "DELETE",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${newToken}`,
+            },
+          });
+          if (!retryResponse.ok) throw new Error("Failed to delete document");
+          
+          setDocuments((prevDocs) => prevDocs.filter(doc => doc.id !== reportId))
+          showNotification('success', 'Document deleted successfully!')
+          return;
+        }
+        throw new Error(`Failed to delete: ${response.statusText}`);
       }
-      throw new Error(`Failed to fetch: ${response.statusText}`);
-    }
   
-      const result = await response.json();
-  
-      // Remove the document from the local state
       setDocuments((prevDocs) => prevDocs.filter(doc => doc.id !== reportId))
       
-      // Show success message
       showNotification('success', 'Document deleted successfully!')
       
     } catch (error) {
       console.error("Error deleting document:", error);
       showNotification('error', 'Failed to delete document. Please try again.')
     } finally {
-      // Reset loading state
       setIsDeleting(null)
     }
   };
   
-const handleDownloadDocument = async (reportId, fileName) => {
-  try {
-    const token = await getToken();
+  const getMimeType = (extension: string): string => {
+    const mimeTypes: Record<string, string> = {
+      'pdf': 'application/pdf',
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'png': 'image/png',
+      'gif': 'image/gif',
+      'doc': 'application/msword',
+      'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    };
+    return mimeTypes[extension.toLowerCase()] || 'application/octet-stream';
+  };
 
-    // Step 1: Get presigned URL from backend
-    const response = await fetch(`${BASE_URL}/api/reports/files/${reportId}/download`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+  const getUTI = (extension: string): string => {
+    const utiTypes: Record<string, string> = {
+      'pdf': 'com.adobe.pdf',
+      'jpg': 'public.jpeg',
+      'jpeg': 'public.jpeg',
+      'png': 'public.png',
+      'gif': 'com.compuserve.gif',
+    };
+    return utiTypes[extension.toLowerCase()] || 'public.data';
+  };
 
-    if (response.status === 401) {
-      Alert.alert("Session Expired", "Please log in again to download this file.");
-      return;
+  const handleDownloadDocument = async (reportId: string, fileName: string) => {
+    try {
+      // Step 1: Request permissions for saving
+      const permissionResult = await requestMediaLibraryPermissions('download');
+      
+      if (!permissionResult.granted) {
+        console.log('Permission denied for saving files');
+        return;
+      }
+
+      // Step 2: Get download URL
+      const token = await getToken();
+
+      showNotification('success', 'Preparing download...');
+
+      const response = await fetch(`${BASE_URL}/api/reports/files/${reportId}/download`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.status === 401) {
+        Alert.alert(
+          "Session Expired",
+          "Your session has expired. Please log in again to download this file.",
+          [{ text: "OK" }]
+        );
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Failed to get download link (status: ${response.status})`);
+      }
+
+      const { url, filename } = await response.json();
+      const finalFileName = fileName || filename || `report_${reportId}`;
+
+      const fileExtension = finalFileName.includes(".")
+        ? finalFileName.split(".").pop() || "dat"
+        : "dat";
+
+      const fileUri = `${FileSystem.documentDirectory}${finalFileName}`;
+
+      showNotification('success', 'Downloading file...');
+      
+      // Step 3: Download file
+      const downloadRes = await FileSystem.downloadAsync(url, fileUri);
+
+      if (downloadRes.status !== 200) {
+        throw new Error("Failed to download file from server");
+      }
+
+      // Step 4: Share/Save file
+      const isAvailable = await Sharing.isAvailableAsync();
+      
+      if (isAvailable) {
+        showNotification('success', 'Download complete!');
+        
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        await Sharing.shareAsync(downloadRes.uri, {
+          mimeType: getMimeType(fileExtension),
+          dialogTitle: `Save ${finalFileName}`,
+          UTI: getUTI(fileExtension),
+        });
+        
+      } else {
+        Alert.alert(
+          "Download Complete",
+          `File saved successfully!\n\nFile: ${finalFileName}\nLocation: ${downloadRes.uri}\n\nYou can access this file from your device's file manager.`,
+          [{ text: "OK" }]
+        );
+      }
+
+      console.log("File downloaded successfully:", downloadRes.uri);
+
+    } catch (error: any) {
+      console.error("Download error:", error);
+      
+      let errorMessage = "Unable to download file. Please try again.";
+      
+      if (error.message?.includes("network")) {
+        errorMessage = "Network error. Please check your connection.";
+      } else if (error.message?.includes("space")) {
+        errorMessage = "Not enough storage space. Please free up space and try again.";
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      Alert.alert("Download Failed", errorMessage, [{ text: "OK" }]);
     }
-
-    if (!response.ok) {
-      Alert.alert("Error", `Failed to get download link (status: ${response.status}).`);
-      return;
-    }
-
-    const { url, filename } = await response.json();
-    const finalFileName = fileName || filename || `report_${reportId}`;
-
-    // Step 2: Pick file extension safely
-    const fileExtension = finalFileName.includes(".")
-      ? finalFileName.split(".").pop()
-      : "dat"; // default if unknown
-
-    const fileUri = `${FileSystem.documentDirectory}${finalFileName}`;
-
-    // Step 3: Download the file directly to filesystem
-    const downloadRes = await FileSystem.downloadAsync(url, fileUri);
-
-    if (downloadRes.status !== 200) {
-      Alert.alert("Error", "Failed to download file from S3.");
-      return;
-    }
-
-    // Step 4: Share or notify user
-    const isAvailable = await Sharing.isAvailableAsync();
-    if (isAvailable) {
-      await Sharing.shareAsync(downloadRes.uri);
-    } else {
-      Alert.alert("Download Complete", `File saved to: ${downloadRes.uri}`);
-    }
-
-    console.log("File saved:", downloadRes.uri);
-
-  } catch (error) {
-    console.error("Download error:", error);
-    Alert.alert("Error", `Unable to download file: ${error.message}`);
-  }
-};
-  
-  // Helper function to convert the blob to base64
-  const blobToBase64 = async (blob) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result.split(',')[1]); // Get base64 part
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
   };
 
   if (loading) {
@@ -365,12 +479,18 @@ const handleDownloadDocument = async (reportId, fileName) => {
     )
   }
 
-  
   if (error) {
     return (
       <ThemedView style={styles.container}>
         <SafeAreaView style={styles.safeArea}>
-          <Text>Error loading documents: {error.message}</Text>
+          <View style={styles.errorContainer}>
+            <Ionicons name="alert-circle-outline" size={64} color={isDark ? "#ff6b6b" : "#ff0000"} />
+            <ThemedText style={styles.errorText}>Error loading documents</ThemedText>
+            <Text style={styles.errorMessage}>{error.message}</Text>
+            <TouchableOpacity style={styles.retryButton} onPress={fetchDocuments}>
+              <ThemedText style={styles.retryButtonText}>Retry</ThemedText>
+            </TouchableOpacity>
+          </View>
         </SafeAreaView>
       </ThemedView>
     )
@@ -381,7 +501,6 @@ const handleDownloadDocument = async (reportId, fileName) => {
       <MenuProvider>
         <ThemedView style={styles.container}>
           <SafeAreaView style={styles.safeArea}>
-            {/* Success/Error Message */}
             {showMessage && (
               <View style={[
                 styles.messageContainer,
@@ -417,7 +536,7 @@ const handleDownloadDocument = async (reportId, fileName) => {
                   document={item}
                   onDelete={() => handleDeleteDocument(item.id)}
                   onDownload={() => handleDownloadDocument(item.id, item.original_filename)}
-                  isDeleting={isDeleting === item.id} // Pass loading state to DocumentCard
+                  isDeleting={isDeleting === item.id}
                 />
               )}
               contentContainerStyle={styles.listContent}
@@ -426,6 +545,9 @@ const handleDownloadDocument = async (reportId, fileName) => {
                 <ThemedView style={styles.emptyContainer}>
                   <Ionicons name="document-text-outline" size={64} color={isDark ? "#444" : "#CCCCCC"} />
                   <ThemedText style={styles.emptyText}>No documents found</ThemedText>
+                  <ThemedText style={styles.emptySubtext}>
+                    Securely upload and store your medical reports, prescriptions, X-rays, and lab results. Access them anytime and share easily with healthcare providers.
+                  </ThemedText>
                   <TouchableOpacity style={styles.emptyUploadButton} onPress={handleUploadDocument}>
                     <Ionicons name="cloud-upload-outline" size={20} color="#fff" />
                     <ThemedText style={styles.uploadButtonText}>Upload Document</ThemedText>
@@ -434,7 +556,6 @@ const handleDownloadDocument = async (reportId, fileName) => {
               }
             />
 
-            {/* Upload Progress Modal */}
             <Modal visible={isUploading} transparent={true} animationType="fade">
               <View style={styles.modalOverlay}>
                 <ThemedView
@@ -466,7 +587,6 @@ const handleDownloadDocument = async (reportId, fileName) => {
       </MenuProvider>
     </>
   );
-  
 }
 
 const styles = StyleSheet.create({
@@ -547,8 +667,17 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     marginTop: 16,
+    marginBottom: 8,
+    opacity: 0.9,
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  emptySubtext: {
     marginBottom: 24,
-    opacity: 0.7,
+    opacity: 0.6,
+    textAlign: 'center',
+    paddingHorizontal: 20,
+    fontSize: 14,
   },
   emptyUploadButton: {
     flexDirection: "row",
@@ -609,5 +738,33 @@ const styles = StyleSheet.create({
   progressText: {
     fontSize: 14,
     fontWeight: "600",
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorText: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  errorMessage: {
+    fontSize: 14,
+    opacity: 0.7,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  retryButton: {
+    backgroundColor: '#6C63FF',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 25,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontWeight: '600',
   },
 });

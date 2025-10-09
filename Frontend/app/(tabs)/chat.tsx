@@ -17,6 +17,7 @@ import {
   TouchableOpacity,
   View,
   Alert,
+  Linking,
 } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
@@ -267,6 +268,20 @@ const formatDuration = (milliseconds: number): string => {
   return `${mins}:${secs.toString().padStart(2, "0")}`
 }
 
+// Helper function to open app settings
+const openAppSettings = async () => {
+  try {
+    if (Platform.OS === 'ios') {
+      await Linking.openURL('app-settings:')
+    } else {
+      await Linking.openSettings()
+    }
+  } catch (error) {
+    console.error('Failed to open settings:', error)
+    Alert.alert('Error', 'Unable to open settings. Please open Settings app manually.')
+  }
+}
+
 export default function ChatScreen() {
   const colorScheme = useColorScheme() ?? "light"
   const isDark = colorScheme === "dark"
@@ -307,9 +322,15 @@ export default function ChatScreen() {
       
       if (status !== "granted") {
         Alert.alert(
-          "Permission Required",
-          "Microphone permission is required for voice messages. Please enable it in your device settings.",
-          [{ text: "OK" }]
+          "Microphone Access Required",
+          "MediWallet needs microphone access to enable voice conversations with your AI health assistant. You can speak naturally to ask questions about your uploaded medical documents, discuss symptoms, or inquire about your medications instead of typing.\n\nFor example: 'What do my recent blood test results mean?' or 'When should I take my medications?'",
+          [
+            { text: "Not Now", style: "cancel" },
+            { 
+              text: "Open Settings", 
+              onPress: () => openAppSettings()
+            }
+          ]
         )
       }
     })()
@@ -406,9 +427,15 @@ export default function ChatScreen() {
   const startRecording = async () => {
     if (!hasAudioPermission) {
       Alert.alert(
-        "Permission Required",
-        "Microphone permission is required for voice messages.",
-        [{ text: "OK" }]
+        "Microphone Access Required",
+        "MediWallet needs microphone access to enable voice conversations with your AI health assistant. You can speak naturally to ask questions about your uploaded medical documents, discuss symptoms, or inquire about your medications instead of typing.\n\nFor example: 'What do my recent blood test results mean?' or 'When should I take my medications?'",
+        [
+          { text: "Not Now", style: "cancel" },
+          { 
+            text: "Open Settings", 
+            onPress: () => openAppSettings()
+          }
+        ]
       )
       return
     }

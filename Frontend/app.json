@@ -13,6 +13,9 @@
       "bundleIdentifier": "com.sparkstorm.mediwallet",
       "usesAppleSignIn": false,
       "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Mediwallet needs access to your photo library to allow you to select and upload medical documents such as lab reports, prescriptions, X-rays, and other health records. For example, you can upload a photo of your blood test results to keep them securely stored in your digital health wallet.",
+        "NSPhotoLibraryAddUsageDescription": "Mediwallet needs permission to save downloaded medical documents to your photo library so you can access them offline. For example, after downloading a prescription from the app, you can save it to your Photos for easy sharing with your doctor or pharmacist.",
+        "NSCameraUsageDescription": "Mediwallet needs access to your camera to capture photos of medical documents such as prescriptions, lab reports, and doctor's notes. For example, you can take a photo of a new prescription and immediately upload it to your secure health record.",
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true,
           "NSExceptionDomains": {
@@ -44,7 +47,13 @@
       "usesCleartextTraffic": true,
       "networkSecurityConfig": {
         "cleartextTraffic": true
-      }
+      },
+      "permissions": [
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -63,6 +72,12 @@
         }
       ],
       "expo-secure-store",
+      [
+        "expo-document-picker",
+        {
+          "iCloudContainerEnvironment": "Production"
+        }
+      ],
       [
         "expo-build-properties",
         {

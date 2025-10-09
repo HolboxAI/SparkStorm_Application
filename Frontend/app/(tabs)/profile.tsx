@@ -47,7 +47,7 @@ const handleProfilePictureUpdate = async () => {
   try {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permissionResult.granted) {
-      Alert.alert("Permission Denied", "We need permission to access your photos.");
+      Alert.alert("Permission Required", "MediWallet needs access to your photo library to allow you to upload medical documents, prescriptions, lab reports, and other healthcare records. For example, you can upload a photo of your doctor's prescription to discuss it with our AI health assistant and get insights about your medications.");
       return;
     }
 
