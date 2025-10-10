@@ -54,7 +54,7 @@ export default function DocumentsScreen() {
   const fetchDocuments = async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
       const token = await getToken();
       const response = await fetch(`${BASE_URL}/api/reports/files`, {
@@ -64,20 +64,20 @@ export default function DocumentsScreen() {
           Authorization: `Bearer ${token}`,
         },
       });
-      
+
       if (!response.ok) {
         if (response.status === 401) {
           const newToken = await getToken();
-          
+
           const retryResponse = await fetch(`${BASE_URL}/api/reports/files`, {
             method: "GET",
             headers: {
-              "Content-Type": "application/json", 
+              "Content-Type": "application/json",
               Authorization: `Bearer ${newToken}`,
             },
           });
           if (!retryResponse.ok) throw new Error("Retry failed");
-          
+
           const retryData = await retryResponse.json();
           setDocuments(retryData);
           return;
@@ -87,7 +87,7 @@ export default function DocumentsScreen() {
 
       const data = await response.json();
       console.log("Fetched documents:", data);
-      
+
       setDocuments(data);
     } catch (err) {
       console.log("Error fetching documents:", err);
@@ -101,7 +101,7 @@ export default function DocumentsScreen() {
     setMessageType(type)
     setMessageText(text)
     setShowMessage(true)
-    
+
     setTimeout(() => {
       setShowMessage(false)
     }, 3000)
@@ -124,7 +124,7 @@ export default function DocumentsScreen() {
 
       // Step 2: Request permissions
       const permissionResult = await requestMediaLibraryPermissions('upload');
-      
+
       if (!permissionResult.granted) {
         console.log('Permission denied for media library');
         return;
@@ -155,22 +155,22 @@ export default function DocumentsScreen() {
 
       // Step 4: Get token
       const token = await getToken();
-      
+
       setIsUploading(false);
       setUploadProgress(0);
-  
+
       // Step 5: Pick document
       const result = await DocumentPicker.getDocumentAsync({
         type: ["application/pdf", "image/*"],
         copyToCacheDirectory: true,
         multiple: false,
       });
-  
+
       if (result.canceled) {
         console.log("User canceled document selection");
         return;
       }
-  
+
       if (!result.assets || result.assets.length === 0) {
         throw new Error("No files were selected");
       }
@@ -187,29 +187,29 @@ export default function DocumentsScreen() {
         );
         return;
       }
-  
+
       // Step 7: Upload
       setIsUploading(true);
-      
+
       if (lottieRef.current) {
         lottieRef.current.play();
       }
-  
+
       const formData = new FormData();
-      
+
       formData.append("file", {
         uri: file.uri,
         name: file.name || `document_${Date.now()}`,
         type: file.mimeType || 'application/octet-stream',
       } as any);
-  
+
       const progressInterval = setInterval(() => {
         setUploadProgress(prev => {
           const newProgress = prev + 0.05;
           return newProgress >= 0.95 ? 0.95 : newProgress;
         });
       }, 100);
-  
+
       try {
         const response = await fetch(`${BASE_URL}/api/reports/upload`, {
           method: "POST",
@@ -219,19 +219,19 @@ export default function DocumentsScreen() {
             Authorization: `Bearer ${token}`,
           },
         });
-  
+
         clearInterval(progressInterval);
         setUploadProgress(1);
-  
+
         if (!response.ok) {
           const errorData = await response.json();
           throw new Error(errorData.message || "Upload failed");
         }
-  
+
         const data = await response.json();
-  
+
         const newDocument = {
-          id: data.id || `doc-${Date.now()}`,
+          id: data.report_id,
           description: data.description || "",
           file_path: data.file_path || file.uri,
           uploaded_at: new Date().toISOString(),
@@ -239,22 +239,22 @@ export default function DocumentsScreen() {
           summary: data.summary || "",
           type: file.mimeType?.includes("pdf") ? "pdf" : "image"
         };
-  
+
         setDocuments(prev => [newDocument, ...prev]);
-        
+
         showNotification('success', `${file.name} uploaded successfully!`);
-        
+
       } catch (uploadError) {
         clearInterval(progressInterval);
         throw uploadError;
       }
-  
+
     } catch (error: any) {
       console.error("Document upload error:", error);
-      
+
       // User-friendly error messages
       let errorMessage = "Failed to upload document. Please try again.";
-      
+
       if (error.message?.includes("network")) {
         errorMessage = "Network error. Please check your connection and try again.";
       } else if (error.message?.includes("timeout")) {
@@ -262,7 +262,7 @@ export default function DocumentsScreen() {
       } else if (error.message && error.message !== "User canceled document selection") {
         errorMessage = error.message;
       }
-      
+
       // Only show alert for actual errors (not cancellations)
       if (error.message !== "User canceled document selection") {
         Alert.alert("Upload Failed", errorMessage, [{ text: "OK" }]);
@@ -274,7 +274,7 @@ export default function DocumentsScreen() {
       }, 500);
     }
   };
-  
+
   const handleDeleteDocument = async (reportId: string) => {
     const shouldDelete = await new Promise<boolean>((resolve) => {
       Alert.alert(
@@ -298,12 +298,12 @@ export default function DocumentsScreen() {
     if (!shouldDelete) {
       return;
     }
-    
+
     setIsDeleting(reportId)
-    
+
     try {
       const token = await getToken();
-      
+
       const response = await fetch(`${BASE_URL}/api/reports/files/${reportId}`, {
         method: "DELETE",
         headers: {
@@ -311,7 +311,7 @@ export default function DocumentsScreen() {
           Authorization: `Bearer ${token}`,
         },
       });
-  
+
       if (!response.ok) {
         if (response.status === 401) {
           const newToken = await getToken();
@@ -323,18 +323,18 @@ export default function DocumentsScreen() {
             },
           });
           if (!retryResponse.ok) throw new Error("Failed to delete document");
-          
+
           setDocuments((prevDocs) => prevDocs.filter(doc => doc.id !== reportId))
           showNotification('success', 'Document deleted successfully!')
           return;
         }
         throw new Error(`Failed to delete: ${response.statusText}`);
       }
-  
+
       setDocuments((prevDocs) => prevDocs.filter(doc => doc.id !== reportId))
-      
+
       showNotification('success', 'Document deleted successfully!')
-      
+
     } catch (error) {
       console.error("Error deleting document:", error);
       showNotification('error', 'Failed to delete document. Please try again.')
@@ -342,7 +342,7 @@ export default function DocumentsScreen() {
       setIsDeleting(null)
     }
   };
-  
+
   const getMimeType = (extension: string): string => {
     const mimeTypes: Record<string, string> = {
       'pdf': 'application/pdf',
@@ -371,7 +371,7 @@ export default function DocumentsScreen() {
     try {
       // Step 1: Request permissions for saving
       const permissionResult = await requestMediaLibraryPermissions('download');
-      
+
       if (!permissionResult.granted) {
         console.log('Permission denied for saving files');
         return;
@@ -412,7 +412,7 @@ export default function DocumentsScreen() {
       const fileUri = `${FileSystem.documentDirectory}${finalFileName}`;
 
       showNotification('success', 'Downloading file...');
-      
+
       // Step 3: Download file
       const downloadRes = await FileSystem.downloadAsync(url, fileUri);
 
@@ -422,18 +422,18 @@ export default function DocumentsScreen() {
 
       // Step 4: Share/Save file
       const isAvailable = await Sharing.isAvailableAsync();
-      
+
       if (isAvailable) {
         showNotification('success', 'Download complete!');
-        
+
         await new Promise(resolve => setTimeout(resolve, 500));
-        
+
         await Sharing.shareAsync(downloadRes.uri, {
           mimeType: getMimeType(fileExtension),
           dialogTitle: `Save ${finalFileName}`,
           UTI: getUTI(fileExtension),
         });
-        
+
       } else {
         Alert.alert(
           "Download Complete",
@@ -446,9 +446,9 @@ export default function DocumentsScreen() {
 
     } catch (error: any) {
       console.error("Download error:", error);
-      
+
       let errorMessage = "Unable to download file. Please try again.";
-      
+
       if (error.message?.includes("network")) {
         errorMessage = "Network error. Please check your connection.";
       } else if (error.message?.includes("space")) {
@@ -456,7 +456,7 @@ export default function DocumentsScreen() {
       } else if (error.message) {
         errorMessage = error.message;
       }
-      
+
       Alert.alert("Download Failed", errorMessage, [{ text: "OK" }]);
     }
   };
@@ -506,10 +506,10 @@ export default function DocumentsScreen() {
                 styles.messageContainer,
                 { backgroundColor: messageType === 'success' ? '#4CAF50' : '#F44336' }
               ]}>
-                <Ionicons 
-                  name={messageType === 'success' ? 'checkmark-circle' : 'alert-circle'} 
-                  size={20} 
-                  color="#fff" 
+                <Ionicons
+                  name={messageType === 'success' ? 'checkmark-circle' : 'alert-circle'}
+                  size={20}
+                  color="#fff"
                 />
                 <Text style={styles.messageText}>{messageText}</Text>
                 <TouchableOpacity onPress={() => setShowMessage(false)}>
