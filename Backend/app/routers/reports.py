@@ -211,7 +211,6 @@ async def get_file_details(
 ):
     try:
         report = db.query(Reports).filter(
-            Reports.id == report_id,
             Reports.user_id == current_user.id
         ).first()
         if not report:
@@ -239,19 +238,19 @@ async def delete_file(
         if not report:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
 
-        # Delete from S3 if this is an S3-backed report
+        # 1. Delete from S3 if this is an S3-backed report
         try:
             bucket, key = _from_s3_uri(report.file_path)
             _s3().delete_object(Bucket=bucket, Key=key)
         except ValueError:
-            # legacy: file_path was a local path; try to remove it
             if os.path.exists(report.file_path):
                 os.remove(report.file_path)
 
-        # Remove from vector store
+        # 2. Remove from vector store
         document_store = DocumentStore()
         document_store.delete_document(report_id=report.id, user_id=current_user.clerk_id)
 
+        # 3. Remove the report from DB
         db.delete(report)
         db.commit()
 
@@ -259,6 +258,7 @@ async def delete_file(
     except (BotoCoreError, ClientError) as e:
         raise HTTPException(status_code=502, detail=f"S3 error: {str(e)}")
     except Exception as e:
+        print(f"Error deleting document: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(e)}")
 
 @router.get("/files/{report_id}/download")

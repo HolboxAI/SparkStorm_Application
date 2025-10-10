@@ -12,8 +12,39 @@ from ..models.users import User, UserRole
 from ..schemas.users import UserCreate, UserResponse, UserUpdate, ResetPassword
 from ..databse import get_db
 from ..core.auth import get_current_user
+import boto3
+from botocore.client import Config as BotoConfig
+from botocore.exceptions import BotoCoreError, ClientError
+from ..models.reports import Reports
+from ..services.document_store import DocumentStore
+from ..config import settings
 
 router = APIRouter()
+
+# ---- S3 helpers copied from reports.py ----
+def _s3():
+    if not (hasattr(settings, 'AWS_ACCESS_KEY_ID') and settings.AWS_ACCESS_KEY_ID and
+            hasattr(settings, 'AWS_SECRET_ACCESS_KEY') and settings.AWS_SECRET_ACCESS_KEY):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AWS credentials are not configured"
+        )
+
+    return boto3.client(
+        "s3",
+        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+        region_name=getattr(settings, "AWS_REGION", "us-east-1"),
+        config=BotoConfig(signature_version="s3v4")
+    )
+
+
+def _from_s3_uri(uri: str) -> tuple[str, str]:
+    if not uri.startswith("s3://"):
+        raise ValueError("Not an S3 URI")
+    _, rest = uri.split("s3://", 1)
+    bucket, key = rest.split("/", 1)
+    return bucket, key
 
 # Replace with your Clerk JWT verification logic
 CLERK_JWKS_URL = os.getenv("CLERK_JWKS_URL")
@@ -104,25 +135,104 @@ async def edit_user(
         print(traceback.format_exc())
         return {"success": False, "message": "User update failed"}
 
-@router.post("/delete", response_model=dict)
+@router.delete("/delete-account", response_model=dict)
 async def delete_user(
-    user_id: int,
+    user_id: str,  # this is Clerk ID
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     try:
-        # Check if user exists
-        user = db.query(User).filter(User.id == user_id).first()
+        print("Deleting account for Clerk ID:", user_id)
+
+        # 1️⃣ Find user by clerk_id
+        user = db.query(User).filter(User.clerk_id == user_id).first()
         if not user:
             return {"success": 0, "message": "User not found"}
-        
-        # Delete user
+
+        internal_user_id = user.id
+        document_store = DocumentStore()
+        s3_client = _s3()
+        bucket = settings.AWS_S3_BUCKET
+
+        # 2️⃣ Delete user's reports (S3 + Chroma + DB)
+        reports = db.query(Reports).filter(Reports.user_id == internal_user_id).all()
+        for report in reports:
+            try:
+                # Delete report file from S3
+                if report.file_path and report.file_path.startswith("s3://"):
+                    try:
+                        b, key = _from_s3_uri(report.file_path)
+                        s3_client.delete_object(Bucket=b, Key=key)
+                        print(f"Deleted report file {key}")
+                    except Exception as e:
+                        print(f"⚠️ Error deleting S3 object {report.file_path}: {e}")
+            except Exception:
+                pass
+
+            # Delete individual document from Chroma
+            try:
+                document_store.delete_document(report_id=report.id, user_id=user.clerk_id)
+            except Exception as e:
+                print(f"⚠️ Error deleting document from Chroma: {e}")
+
+            db.delete(report)
+
+        db.commit()
+
+        # Delete entire user's Chroma collection
+        try:
+            document_store.delete_user_collection(user_id=user.clerk_id)
+            print(f"✅ Deleted Chroma collection for user: {user.clerk_id}")
+        except Exception as e:
+            print(f"⚠️ Error deleting Chroma collection: {e}")
+
+        # 3️⃣ Delete user's entire S3 folder
+        try:
+            user_prefix = f"users/{user.clerk_id}/"
+            listed = s3_client.list_objects_v2(Bucket=bucket, Prefix=user_prefix)
+            if "Contents" in listed:
+                delete_keys = [{"Key": obj["Key"]} for obj in listed["Contents"]]
+                s3_client.delete_objects(Bucket=bucket, Delete={"Objects": delete_keys})
+                print(f"Deleted folder: {user_prefix}")
+        except (BotoCoreError, ClientError) as e:
+            print(f"⚠️ Error deleting S3 folder: {e}")
+
+        # 4️⃣ Delete user from Clerk
+        try:
+            if not CLERK_SECRET_KEY:
+                print("⚠️ CLERK_SECRET_KEY not configured, skipping Clerk deletion")
+            else:
+                async with httpx.AsyncClient() as client:
+                    clerk_response = await client.delete(
+                        f"https://api.clerk.com/v1/users/{user_id}",
+                        headers={
+                            "Authorization": f"Bearer {CLERK_SECRET_KEY}",
+                            "Content-Type": "application/json"
+                        }
+                    )
+                    
+                    if clerk_response.status_code == 200:
+                        print(f"✅ Deleted user from Clerk: {user_id}")
+                    elif clerk_response.status_code == 404:
+                        print(f"⚠️ User not found in Clerk: {user_id}")
+                    else:
+                        print(f"⚠️ Clerk deletion failed with status {clerk_response.status_code}: {clerk_response.text}")
+                        
+        except Exception as e:
+            print(f"⚠️ Error deleting from Clerk: {e}")
+            # Continue with local deletion even if Clerk fails
+
+        # 5️⃣ Delete user from Postgres
         db.delete(user)
         db.commit()
-        
-        return {"success": True, "message": "User deleted successfully"}
+
+        print("✅ User deletion complete")
+        return {"success": True, "message": "User and all related data deleted successfully"}
+
     except Exception as e:
-        return {"success": False, "message": "User deletion failed"}
+        print(traceback.format_exc())
+        db.rollback()
+        return {"success": False, "message": f"User deletion failed: {str(e)}"}
 
 @router.get("/list", response_model=List[UserResponse])
 async def list_users(

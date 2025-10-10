@@ -5,6 +5,7 @@ from langchain_chroma import Chroma
 from langchain.docstore.document import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import os
+import shutil
 from typing import List, Dict, Any, Optional
 import uuid
 from ..config import settings
@@ -30,8 +31,6 @@ class SentenceTransformerEmbeddings(Embeddings):
 class DocumentStore:
     def __init__(self):
         self.embedding_model = SentenceTransformerEmbeddings()
-        # self.embedding_function = lambda texts: self.embedding_model.encode(texts, show_progress_bar=False, convert_to_numpy=True)
-
         
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
@@ -43,6 +42,25 @@ class DocumentStore:
         
         # Ensure the persist directory exists
         os.makedirs(settings.CHROMA_PERSIST_DIRECTORY, exist_ok=True)
+
+    def delete_user_collection(self, user_id: str):
+        """Delete entire collection and directory for a user"""
+        try:
+            # Remove from memory if loaded
+            if user_id in self.vector_stores:
+                del self.vector_stores[user_id]
+            
+            # Delete the physical directory
+            user_dir = os.path.join(settings.CHROMA_PERSIST_DIRECTORY, str(user_id))
+            if os.path.exists(user_dir):
+                shutil.rmtree(user_dir)
+                print(f"✅ Deleted Chroma directory: {user_dir}")
+            else:
+                print(f"⚠️ Chroma directory not found: {user_dir}")
+                
+        except Exception as e:
+            print(f"❌ Error deleting collection for user {user_id}: {e}")
+            raise
 
     def delete_document(self, report_id: int, user_id: int):
         """
@@ -73,7 +91,7 @@ class DocumentStore:
         
         # If Chroma supports document deletion by ID, use that
         try:
-            vector_store.delete(ids=str(report_id))  # Replace with actual delete method if available
+            vector_store.delete(ids=str(report_id))
 
         except Exception as e:
             raise HTTPException(
@@ -184,6 +202,4 @@ class DocumentStore:
     
     def persist_all(self):
         """Persist all vector stores to disk."""
-        # for vector_store in self.vector_stores.values():
-        #     vector_store.persist()
         pass
