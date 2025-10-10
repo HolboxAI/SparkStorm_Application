@@ -1,9 +1,8 @@
-"use client"
-
-import { Stack } from "expo-router"
-import { StyleSheet, TouchableOpacity, View, ScrollView, Linking } from "react-native"
+import { StyleSheet, TouchableOpacity, View, ScrollView, Linking, Platform } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import Ionicons from "@expo/vector-icons/Ionicons"
+import { Image } from "expo-image"
+import { useRouter } from "expo-router"
 
 import { ThemedText } from "@/components/ThemedText"
 import { ThemedView } from "@/components/ThemedView"
@@ -13,97 +12,122 @@ import { useColorScheme } from "@/hooks/useColorScheme"
 export default function HelpSupportScreen() {
   const colorScheme = useColorScheme() ?? "light"
   const isDark = colorScheme === "dark"
+  const router = useRouter()
 
-  const supportEmail = "support@mediwallet.com"
+  const supportEmail = "ask@mediwallet.ai"
 
   const handleEmailSupport = () => {
     Linking.openURL(`mailto:${supportEmail}?subject=MediWallet Support Request`)
   }
 
+  const handleGoBack = () => {
+    if (router.canGoBack()) {
+      router.back()
+    }
+  }
+
   return (
-    <>
-      <Stack.Screen
-        options={{
-          title: "Help & Support",
-          headerShown: true,
-          headerStyle: {
-            backgroundColor: isDark ? Colors.dark.background : Colors.light.background,
-          },
-          headerBackTitle: "Back",
-          headerTintColor: isDark ? Colors.dark.text : Colors.light.text,
-          headerShadowVisible: false,
-        }}
-      />
+    <ThemedView style={styles.container}>
+      <SafeAreaView edges={["top", "bottom"]} style={styles.safeArea}>
+        {/* Custom Header */}
+        <View style={[styles.header, { backgroundColor: isDark ? Colors.dark.background : Colors.light.background }]}>
+          <TouchableOpacity 
+            onPress={handleGoBack} 
+            style={styles.backButton}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons 
+              name="arrow-back" 
+              size={24} 
+              color={isDark ? Colors.dark.text : Colors.light.text} 
+            />
+          </TouchableOpacity>
+          
+          <ThemedText type="defaultSemiBold" style={styles.headerTitle}>
+            Help & Support
+          </ThemedText>
+          
+          <View style={styles.headerRight} />
+        </View>
 
-      <ThemedView style={styles.container}>
-        <SafeAreaView edges={["bottom"]} style={styles.safeArea}>
-          <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-            <View style={styles.iconContainer}>
-              <View style={[styles.iconCircle, { backgroundColor: isDark ? "rgba(108, 99, 255, 0.2)" : "#F0F0F0" }]}>
-                <Ionicons name="help-buoy" size={60} color="#6C63FF" />
-              </View>
+        {/* Content */}
+        <ScrollView 
+          style={styles.scrollView} 
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.logoContainer}>
+            <Image
+              source={require("@/assets/images/Logo2.png")}
+              style={styles.logo}
+              contentFit="contain"
+              alt="MediWallet Logo"
+            />
+          </View>
+
+          <ThemedText type="title" style={styles.title}>
+            How can we help you?
+          </ThemedText>
+
+          <ThemedText style={styles.description}>
+            We're here to help with any questions or issues you might have with MediWallet. Our support team is
+            available Monday through Friday, 9 AM to 5 PM CST.
+          </ThemedText>
+
+          <View style={[styles.contactCard, { backgroundColor: isDark ? "#2D2F30" : "#F5F5F5" }]}>
+            <View style={styles.contactHeader}>
+              <Ionicons name="mail-outline" size={24} color="#6C63FF" />
+              <ThemedText type="defaultSemiBold" style={styles.contactTitle}>
+                Email Support
+              </ThemedText>
             </View>
 
-            <ThemedText type="title" style={styles.title}>
-              How can we help you?
+            <ThemedText style={styles.contactDescription}>
+              For the fastest response, please email our support team directly.
             </ThemedText>
 
-            <ThemedText style={styles.description}>
-              We're here to help with any questions or issues you might have with MediWallet. Our support team is
-              available Monday through Friday, 9 AM to 5 PM CST.
+            <TouchableOpacity 
+              style={styles.emailButton} 
+              onPress={handleEmailSupport}
+              activeOpacity={0.7}
+            >
+              <ThemedText style={styles.emailText}>{supportEmail}</ThemedText>
+              <Ionicons name="open-outline" size={18} color="#6C63FF" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.faqSection}>
+            <ThemedText type="subtitle" style={styles.faqTitle}>
+              Frequently Asked Questions
             </ThemedText>
 
-            <View style={[styles.contactCard, { backgroundColor: isDark ? "#2D2F30" : "#F5F5F5" }]}>
-              <View style={styles.contactHeader}>
-                <Ionicons name="mail-outline" size={24} color="#6C63FF" />
-                <ThemedText type="defaultSemiBold" style={styles.contactTitle}>
-                  Email Support
-                </ThemedText>
-              </View>
-
-              <ThemedText style={styles.contactDescription}>
-                For the fastest response, please email our support team directly.
+            <View style={[styles.faqItem, { borderBottomColor: isDark ? "#333" : "#E5E5E5" }]}>
+              <ThemedText type="defaultSemiBold">How do I upload medical documents?</ThemedText>
+              <ThemedText style={styles.faqAnswer}>
+                You can upload documents by going to the Documents tab and tapping the + button in the top right
+                corner. You can select files from your device or take a photo of a document.
               </ThemedText>
-
-              <TouchableOpacity style={styles.emailButton} onPress={handleEmailSupport}>
-                <ThemedText style={styles.emailText}>{supportEmail}</ThemedText>
-                <Ionicons name="open-outline" size={18} color="#6C63FF" />
-              </TouchableOpacity>
             </View>
 
-            <View style={styles.faqSection}>
-              <ThemedText type="subtitle" style={styles.faqTitle}>
-                Frequently Asked Questions
+            <View style={[styles.faqItem, { borderBottomColor: isDark ? "#333" : "#E5E5E5" }]}>
+              <ThemedText type="defaultSemiBold">Is my medical data secure?</ThemedText>
+              <ThemedText style={styles.faqAnswer}>
+                Yes, all your medical data is encrypted and stored securely. We comply with all relevant healthcare
+                privacy regulations and use industry-standard security measures to protect your information.
               </ThemedText>
-
-              <View style={[styles.faqItem, { borderBottomColor: isDark ? Colors.dark.border : Colors.light.border }]}>
-                <ThemedText type="defaultSemiBold">How do I upload medical documents?</ThemedText>
-                <ThemedText style={styles.faqAnswer}>
-                  You can upload documents by going to the Documents tab and tapping the + button in the top right
-                  corner. You can select files from your device or take a photo of a document.
-                </ThemedText>
-              </View>
-
-              <View style={[styles.faqItem, { borderBottomColor: isDark ? Colors.dark.border : Colors.light.border }]}>
-                <ThemedText type="defaultSemiBold">Is my medical data secure?</ThemedText>
-                <ThemedText style={styles.faqAnswer}>
-                  Yes, all your medical data is encrypted and stored securely. We comply with all relevant healthcare
-                  privacy regulations and use industry-standard security measures to protect your information.
-                </ThemedText>
-              </View>
-
-              <View style={styles.faqItem}>
-                <ThemedText type="defaultSemiBold">How do I connect with my healthcare provider?</ThemedText>
-                <ThemedText style={styles.faqAnswer}>
-                  Currently, you can share your medical records with providers by downloading them from the Documents
-                  section and sharing them directly. We're working on direct provider connections for a future update.
-                </ThemedText>
-              </View>
             </View>
-          </ScrollView>
-        </SafeAreaView>
-      </ThemedView>
-    </>
+
+            <View style={styles.faqItem}>
+              <ThemedText type="defaultSemiBold">How do I connect with my healthcare provider?</ThemedText>
+              <ThemedText style={styles.faqAnswer}>
+                Currently, you can share your medical records with providers by downloading them from the Documents
+                section and sharing them directly. We're working on direct provider connections for a future update.
+              </ThemedText>
+            </View>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    </ThemedView>
   )
 }
 
@@ -114,34 +138,57 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(0, 0, 0, 0.1)",
+  },
+  backButton: {
+    padding: 8,
+    width: 40,
+  },
+  headerTitle: {
+    fontSize: 17,
+    fontWeight: "600",
+  },
+  headerRight: {
+    width: 40,
+  },
   scrollView: {
     flex: 1,
+  },
+  scrollContent: {
     padding: 16,
+    paddingBottom: 32,
   },
-  iconContainer: {
+  logoContainer: {
     alignItems: "center",
-    marginVertical: 24,
+    marginTop: 20,
+    marginBottom: 24,
   },
-  iconCircle: {
+  logo: {
     width: 120,
     height: 120,
-    borderRadius: 60,
-    justifyContent: "center",
-    alignItems: "center",
   },
   title: {
     textAlign: "center",
     marginBottom: 16,
+    fontSize: 24,
   },
   description: {
     textAlign: "center",
     marginBottom: 32,
     lineHeight: 22,
     opacity: 0.8,
+    fontSize: 15,
   },
   contactCard: {
     borderRadius: 12,
-    padding: 16,
+    padding: 20,
     marginBottom: 32,
   },
   contactHeader: {
@@ -156,24 +203,27 @@ const styles = StyleSheet.create({
   contactDescription: {
     marginBottom: 16,
     opacity: 0.8,
+    fontSize: 14,
   },
   emailButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: 12,
+    padding: 14,
     backgroundColor: "rgba(108, 99, 255, 0.1)",
     borderRadius: 8,
   },
   emailText: {
     color: "#6C63FF",
-    fontWeight: "500",
+    fontWeight: "600",
+    fontSize: 15,
   },
   faqSection: {
     marginBottom: 24,
   },
   faqTitle: {
     marginBottom: 16,
+    fontSize: 20,
   },
   faqItem: {
     paddingVertical: 16,
@@ -181,7 +231,8 @@ const styles = StyleSheet.create({
   },
   faqAnswer: {
     marginTop: 8,
-    opacity: 0.8,
+    opacity: 0.7,
     lineHeight: 20,
+    fontSize: 14,
   },
 })

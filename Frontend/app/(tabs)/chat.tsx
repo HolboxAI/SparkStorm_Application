@@ -36,11 +36,16 @@ const SAMPLE_QUESTIONS = [
   "How can I improve my health score?",
 ]
 
+type Citation = {
+  document_name: string
+}
+
 type Message = {
   id: string
   text: string
   isUser: boolean
   timestamp: Date
+  citations?: Citation[]
 }
 
 const TypingIndicator = () => {
@@ -161,6 +166,22 @@ const TypingIndicator = () => {
   )
 }
 
+const CitationBadge = ({ citation, isDark }: { citation: Citation; isDark: boolean }) => {
+  return (
+    <View
+      style={[
+        styles.citationBadge,
+        { backgroundColor: isDark ? "rgba(108, 99, 255, 0.2)" : "rgba(108, 99, 255, 0.15)" },
+      ]}
+    >
+      <Ionicons name="document-text" size={12} color="#6C63FF" style={styles.citationIcon} />
+      <ThemedText style={styles.citationText} numberOfLines={1}>
+        {citation.document_name || "Unknown Document"}
+      </ThemedText>
+    </View>
+  )
+}
+
 const MessageBubble = ({
   message,
   colorScheme,
@@ -216,41 +237,57 @@ const MessageBubble = ({
           <Image source={require("@/assets/images/icon.png")} style={styles.botAvatar} contentFit="cover" />
         </View>
       )}
-      <View
-        style={[
-          styles.messageBubble,
-          isUser
-            ? [styles.userMessageBubble]
-            : [styles.botMessageBubble, { backgroundColor: isDark ? "#2D2F30" : "#F0F0F0" }],
-        ]}
-      >
-        {isUser ? (
-          <LinearGradient
-            colors={["#6C63FF", "#8F7FFF"]}
-            style={styles.userGradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
-            <ThemedText style={[styles.messageText, styles.userMessageText]} lightColor="#FFFFFF" darkColor="#FFFFFF">
-              {message.text}
-            </ThemedText>
-            <ThemedText
-              style={[styles.timestamp, styles.userTimestamp]}
-              lightColor="rgba(255, 255, 255, 0.7)"
-              darkColor="rgba(255, 255, 255, 0.7)"
+      <View style={styles.messageContentWrapper}>
+        <View
+          style={[
+            styles.messageBubble,
+            isUser
+              ? [styles.userMessageBubble]
+              : [styles.botMessageBubble, { backgroundColor: isDark ? "#2D2F30" : "#F0F0F0" }],
+          ]}
+        >
+          {isUser ? (
+            <LinearGradient
+              colors={["#6C63FF", "#8F7FFF"]}
+              style={styles.userGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
             >
-              {formatTime(message.timestamp)}
-            </ThemedText>
-          </LinearGradient>
-        ) : (
-          <>
-            <ThemedText style={styles.messageText} lightColor="#11181C" darkColor="#ECEDEE">
-              {message.text}
-            </ThemedText>
-            <ThemedText style={styles.timestamp} lightColor="rgba(0, 0, 0, 0.5)" darkColor="rgba(255, 255, 255, 0.5)">
-              {formatTime(message.timestamp)}
-            </ThemedText>
-          </>
+              <ThemedText style={[styles.messageText, styles.userMessageText]} lightColor="#FFFFFF" darkColor="#FFFFFF">
+                {message.text}
+              </ThemedText>
+              <ThemedText
+                style={[styles.timestamp, styles.userTimestamp]}
+                lightColor="rgba(255, 255, 255, 0.7)"
+                darkColor="rgba(255, 255, 255, 0.7)"
+              >
+                {formatTime(message.timestamp)}
+              </ThemedText>
+            </LinearGradient>
+          ) : (
+            <>
+              <ThemedText style={styles.messageText} lightColor="#11181C" darkColor="#ECEDEE">
+                {message.text}
+              </ThemedText>
+              <ThemedText style={styles.timestamp} lightColor="rgba(0, 0, 0, 0.5)" darkColor="rgba(255, 255, 255, 0.5)">
+                {formatTime(message.timestamp)}
+              </ThemedText>
+            </>
+          )}
+        </View>
+        
+        {!isUser && message.citations && message.citations.length > 0 && (
+          <View style={styles.citationsContainer}>
+            <View style={styles.citationsHeader}>
+              <Ionicons name="library" size={14} color={isDark ? "#9BA1A6" : "#687076"} />
+              <ThemedText style={styles.citationsHeaderText}>Sources:</ThemedText>
+            </View>
+            <View style={styles.citationsList}>
+              {message.citations.map((citation, idx) => (
+                <CitationBadge key={idx} citation={citation} isDark={isDark} />
+              ))}
+            </View>
+          </View>
         )}
       </View>
     </Animated.View>
@@ -268,7 +305,6 @@ const formatDuration = (milliseconds: number): string => {
   return `${mins}:${secs.toString().padStart(2, "0")}`
 }
 
-// Helper function to open app settings
 const openAppSettings = async () => {
   try {
     if (Platform.OS === 'ios') {
@@ -291,6 +327,7 @@ export default function ChatScreen() {
       text: "Hello! I'm MediWallet's AI assistant. How can I help you today?",
       isUser: false,
       timestamp: new Date(),
+      citations: [],
     },
   ])
   const [inputText, setInputText] = useState("")
@@ -691,6 +728,7 @@ export default function ChatScreen() {
         text: result.message,
         isUser: false,
         timestamp: new Date(),
+        citations: result.citations || [],
       }
 
       setIsTyping(false)
@@ -702,6 +740,7 @@ export default function ChatScreen() {
         text: "Sorry, something went wrong. Please try again later.",
         isUser: false,
         timestamp: new Date(),
+        citations: [],
       }
       setMessages((prev) => [...prev, errorMessage])
     }
@@ -961,7 +1000,7 @@ const styles = StyleSheet.create({
   messageBubbleContainer: {
     flexDirection: "row",
     marginBottom: 16,
-    maxWidth: "80%",
+    maxWidth: "85%",
   },
   userMessageContainer: {
     alignSelf: "flex-end",
@@ -977,6 +1016,9 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
+  },
+  messageContentWrapper: {
+    flex: 1,
   },
   messageBubble: {
     borderRadius: 18,
@@ -1035,6 +1077,43 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     marginHorizontal: 3,
+  },
+  citationsContainer: {
+    marginTop: 8,
+    marginLeft: 0,
+  },
+  citationsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  citationsHeaderText: {
+    fontSize: 12,
+    marginLeft: 4,
+    fontWeight: "500",
+    opacity: 0.7,
+  },
+  citationsList: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  citationBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    maxWidth: "100%",
+  },
+  citationIcon: {
+    marginRight: 4,
+  },
+  citationText: {
+    fontSize: 11,
+    color: "#6C63FF",
+    fontWeight: "500",
+    flexShrink: 1,
   },
   sampleQuestionsContainer: {
     padding: 16,
