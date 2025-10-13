@@ -1,0 +1,51 @@
+diff --git a/node_modules/expo-media-library/ios/MediaLibraryModule.swift b/node_modules/expo-media-library/ios/MediaLibraryModule.swift
+index 363c44b..e314051 100644
+--- a/node_modules/expo-media-library/ios/MediaLibraryModule.swift
++++ b/node_modules/expo-media-library/ios/MediaLibraryModule.swift
+@@ -13,32 +13,24 @@ public class MediaLibraryModule: Module, PhotoLibraryObserverHandler {
+ 
+     Events("mediaLibraryDidChange")
+ 
+-    Constant("MediaType") {
++    Constants {
+       [
+-        "audio": "audio",
+-        "photo": "photo",
+-        "video": "video",
+-        "unknown": "unknown",
+-        "all": "all"
++        "MediaType": [
++          "audio": "audio",
++          "photo": "photo",
++          "video": "video",
++          "unknown": "unknown"
++        ],
++        "SortBy": [
++          "default": "default",
++          "creationTime": "creationTime",
++          "modificationTime": "modificationTime",
++          "mediaType": "mediaType"
++        ],
++        "CHANGE_LISTENER_NAME": "mediaLibraryDidChange"
+       ]
+     }
+ 
+-    Constant("SortBy") {
+-      [
+-        "default": "default",
+-        "creationTime": "creationTime",
+-        "modificationTime": "modificationTime",
+-        "mediaType": "mediaType",
+-        "width": "width",
+-        "height": "height",
+-        "duration": "duration"
+-      ]
+-    }
+-
+-    Constant("CHANGE_LISTENER_NAME") {
+-      "mediaLibraryDidChange"
+-    }
+-
+     OnCreate {
+       appContext?.permissions?.register([
+         MediaLibraryPermissionRequester(),
